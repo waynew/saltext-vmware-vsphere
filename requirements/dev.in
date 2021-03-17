@@ -1,0 +1,4 @@
+nox
+pre-commit
+pylint
+-r tests.in
