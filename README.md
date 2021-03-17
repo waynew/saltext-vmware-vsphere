@@ -1,2 +1,2 @@
-# saltext-vmware-vsphere
-VMWare VSphere Modules
+# vmware_vsphere
+VMware Vsphere Extension Module
