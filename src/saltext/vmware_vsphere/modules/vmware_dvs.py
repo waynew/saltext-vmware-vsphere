@@ -1,3 +1,11 @@
+from salt.utils.decorators import _supports_proxies
+from salt.utils.decorators import depends
+from salt.utils.decorators import ignores_kwargs
+
+HAS_PYVMOMI = False
+HAS_ESX_CLI = False
+
+
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
 def list_dvs(host, username, password, protocol=None, port=None, verify_ssl=True):
@@ -77,9 +85,7 @@ def _get_dvs_link_discovery_protocol(dvs_name, dvs_link_disc_protocol):
     dvs_link_disc_protocl
         The DVS link discovery protocol
     """
-    log.trace(
-        "Building the dict of the DVS '{}' link discovery " "protocol".format(dvs_name)
-    )
+    log.trace("Building the dict of the DVS '{}' link discovery " "protocol".format(dvs_name))
     return {
         "operation": dvs_link_disc_protocol.operation,
         "protocol": dvs_link_disc_protocol.protocol,
@@ -134,8 +140,7 @@ def _get_dvs_infrastructure_traffic_resources(dvs_name, dvs_infra_traffic_ress):
         The DVS infrastructure traffic resources
     """
     log.trace(
-        "Building the dicts of the DVS '{}' infrastructure traffic "
-        "resources".format(dvs_name)
+        "Building the dicts of the DVS '{}' infrastructure traffic " "resources".format(dvs_name)
     )
     res_dicts = []
     for res in dvs_infra_traffic_ress:
@@ -197,11 +202,7 @@ def list_dvss(datacenter=None, dvs_names=None, service_instance=None):
         dvs_dict = _get_dvs_config_dict(props["name"], props["config"])
         # Product info
         dvs_dict.update(
-            {
-                "product_info": _get_dvs_product_info(
-                    props["name"], props["config"].productInfo
-                )
-            }
+            {"product_info": _get_dvs_product_info(props["name"], props["config"].productInfo)}
         )
         # Link Discovery Protocol
         if props["config"].linkDiscoveryProtocolConfig:
@@ -213,9 +214,7 @@ def list_dvss(datacenter=None, dvs_names=None, service_instance=None):
                 }
             )
         # Capability
-        dvs_dict.update(
-            {"capability": _get_dvs_capability(props["name"], props["capability"])}
-        )
+        dvs_dict.update({"capability": _get_dvs_capability(props["name"], props["capability"])})
         # InfrastructureTrafficResourceConfig - available with vSphere 6.0
         if hasattr(props["config"], "infrastructureTrafficResourceConfig"):
             dvs_dict.update(
@@ -291,18 +290,14 @@ def _apply_dvs_capability(capability_spec, capability_dict):
     if "operation_supported" in capability_dict:
         capability_spec.dvsOperationSupported = capability_dict["operation_supported"]
     if "port_operation_supported" in capability_dict:
-        capability_spec.dvPortOperationSupported = capability_dict[
-            "port_operation_supported"
-        ]
+        capability_spec.dvPortOperationSupported = capability_dict["port_operation_supported"]
     if "portgroup_operation_supported" in capability_dict:
         capability_spec.dvPortGroupOperationSupported = capability_dict[
             "portgroup_operation_supported"
         ]
 
 
-def _apply_dvs_infrastructure_traffic_resources(
-    infra_traffic_resources, resource_dicts
-):
+def _apply_dvs_infrastructure_traffic_resources(infra_traffic_resources, resource_dicts):
     """
     Applies the values of the resource dictionaries to infra traffic resources,
     creating the infra traffic resource if required
@@ -317,9 +312,7 @@ def _apply_dvs_infrastructure_traffic_resources(
         else:
             traffic_res = vim.DvsHostInfrastructureTrafficResource()
             traffic_res.key = res_dict["key"]
-            traffic_res.allocationInfo = (
-                vim.DvsHostInfrastructureTrafficResourceAllocation()
-            )
+            traffic_res.allocationInfo = vim.DvsHostInfrastructureTrafficResourceAllocation()
             infra_traffic_resources.append(traffic_res)
         if res_dict.get("limit"):
             traffic_res.allocationInfo.limit = res_dict["limit"]
@@ -329,9 +322,7 @@ def _apply_dvs_infrastructure_traffic_resources(
             if not traffic_res.allocationInfo.shares:
                 traffic_res.allocationInfo.shares = vim.SharesInfo()
         if res_dict.get("share_level"):
-            traffic_res.allocationInfo.shares.level = vim.SharesLevel(
-                res_dict["share_level"]
-            )
+            traffic_res.allocationInfo.shares.level = vim.SharesLevel(res_dict["share_level"])
         if res_dict.get("num_shares"):
             # XXX Even though we always set the number of shares if provided,
             # the vCenter will ignore it unless the share level is 'custom'.
@@ -406,9 +397,7 @@ def create_dvs(dvs_dict, dvs_name, service_instance=None):
         dvs_create_spec.capability = vim.DVSCapability()
         _apply_dvs_capability(dvs_create_spec.capability, dvs_dict["capability"])
     if dvs_dict.get("link_discovery_protocol"):
-        dvs_create_spec.configSpec.linkDiscoveryProtocolConfig = (
-            vim.LinkDiscoveryProtocolConfig()
-        )
+        dvs_create_spec.configSpec.linkDiscoveryProtocolConfig = vim.LinkDiscoveryProtocolConfig()
         _apply_dvs_link_discovery_protocol(
             dvs_create_spec.configSpec.linkDiscoveryProtocolConfig,
             dvs_dict["link_discovery_protocol"],
@@ -425,8 +414,7 @@ def create_dvs(dvs_dict, dvs_name, service_instance=None):
         dvs_refs = salt.utils.vmware.get_dvss(dc_ref, dvs_names=[dvs_name])
         if not dvs_refs:
             raise VMwareObjectRetrievalError(
-                "DVS '{}' wasn't found in datacenter '{}'"
-                "".format(dvs_name, datacenter)
+                "DVS '{}' wasn't found in datacenter '{}'" "".format(dvs_name, datacenter)
             )
         dvs_ref = dvs_refs[0]
         salt.utils.vmware.set_dvs_network_resource_management_enabled(
@@ -632,9 +620,7 @@ def _get_dvportgroup_dict(pg_ref):
     }
     if props["config.defaultPortConfig"]:
         dpg = props["config.defaultPortConfig"]
-        if dpg.vlan and isinstance(
-            dpg.vlan, vim.VmwareDistributedVirtualSwitchVlanIdSpec
-        ):
+        if dpg.vlan and isinstance(dpg.vlan, vim.VmwareDistributedVirtualSwitchVlanIdSpec):
 
             pg_dict.update({"vlan_id": dpg.vlan.vlanId})
         pg_dict.update(
@@ -652,11 +638,7 @@ def _get_dvportgroup_dict(pg_ref):
             }
         )
         pg_dict.update(
-            {
-                "teaming": _get_dvportgroup_teaming(
-                    props["name"], props["config.defaultPortConfig"]
-                )
-            }
+            {"teaming": _get_dvportgroup_teaming(props["name"], props["config.defaultPortConfig"])}
         )
     return pg_dict
 
@@ -703,9 +685,7 @@ def list_dvportgroups(dvs=None, portgroup_names=None, service_instance=None):
     if dvs:
         dvs_refs = salt.utils.vmware.get_dvss(dc_ref, dvs_names=[dvs])
         if not dvs_refs:
-            raise VMwareObjectRetrievalError(
-                "DVS '{}' was not " "retrieved".format(dvs)
-            )
+            raise VMwareObjectRetrievalError("DVS '{}' was not " "retrieved".format(dvs))
         dvs_ref = dvs_refs[0]
     get_all_portgroups = True if not portgroup_names else False
     for pg_ref in salt.utils.vmware.get_dvportgroups(
@@ -835,14 +815,10 @@ def _apply_dvportgroup_teaming(pg_name, teaming, teaming_conf):
         failure_criteria_conf = teaming_conf["failure_criteria"]
         if "check_beacon" in failure_criteria_conf:
             teaming.failureCriteria.checkBeacon = vim.BoolPolicy()
-            teaming.failureCriteria.checkBeacon.value = failure_criteria_conf[
-                "check_beacon"
-            ]
+            teaming.failureCriteria.checkBeacon.value = failure_criteria_conf["check_beacon"]
         if "check_duplex" in failure_criteria_conf:
             teaming.failureCriteria.checkDuplex = vim.BoolPolicy()
-            teaming.failureCriteria.checkDuplex.value = failure_criteria_conf[
-                "check_duplex"
-            ]
+            teaming.failureCriteria.checkDuplex.value = failure_criteria_conf["check_duplex"]
         if "check_error_percent" in failure_criteria_conf:
             teaming.failureCriteria.checkErrorPercent = vim.BoolPolicy()
             teaming.failureCriteria.checkErrorPercent.value = failure_criteria_conf[
@@ -850,19 +826,13 @@ def _apply_dvportgroup_teaming(pg_name, teaming, teaming_conf):
             ]
         if "check_speed" in failure_criteria_conf:
             teaming.failureCriteria.checkSpeed = vim.StringPolicy()
-            teaming.failureCriteria.checkSpeed.value = failure_criteria_conf[
-                "check_speed"
-            ]
+            teaming.failureCriteria.checkSpeed.value = failure_criteria_conf["check_speed"]
         if "full_duplex" in failure_criteria_conf:
             teaming.failureCriteria.fullDuplex = vim.BoolPolicy()
-            teaming.failureCriteria.fullDuplex.value = failure_criteria_conf[
-                "full_duplex"
-            ]
+            teaming.failureCriteria.fullDuplex.value = failure_criteria_conf["full_duplex"]
         if "percentage" in failure_criteria_conf:
             teaming.failureCriteria.percentage = vim.IntPolicy()
-            teaming.failureCriteria.percentage.value = failure_criteria_conf[
-                "percentage"
-            ]
+            teaming.failureCriteria.percentage.value = failure_criteria_conf["percentage"]
         if "speed" in failure_criteria_conf:
             teaming.failureCriteria.speed = vim.IntPolicy()
             teaming.failureCriteria.speed.value = failure_criteria_conf["speed"]
@@ -870,13 +840,9 @@ def _apply_dvportgroup_teaming(pg_name, teaming, teaming_conf):
         if not teaming.uplinkPortOrder:
             teaming.uplinkPortOrder = vim.VMwareUplinkPortOrderPolicy()
         if "active" in teaming_conf["port_order"]:
-            teaming.uplinkPortOrder.activeUplinkPort = teaming_conf["port_order"][
-                "active"
-            ]
+            teaming.uplinkPortOrder.activeUplinkPort = teaming_conf["port_order"]["active"]
         if "standby" in teaming_conf["port_order"]:
-            teaming.uplinkPortOrder.standbyUplinkPort = teaming_conf["port_order"][
-                "standby"
-            ]
+            teaming.uplinkPortOrder.standbyUplinkPort = teaming_conf["port_order"]["standby"]
 
 
 def _apply_dvportgroup_config(pg_name, pg_spec, pg_conf):
@@ -925,9 +891,7 @@ def _apply_dvportgroup_config(pg_name, pg_spec, pg_conf):
         )
     if "teaming" in pg_conf:
         if not pg_spec.defaultPortConfig.uplinkTeamingPolicy:
-            pg_spec.defaultPortConfig.uplinkTeamingPolicy = (
-                vim.VmwareUplinkPortTeamingPolicy()
-            )
+            pg_spec.defaultPortConfig.uplinkTeamingPolicy = vim.VmwareUplinkPortTeamingPolicy()
         _apply_dvportgroup_teaming(
             pg_name, pg_spec.defaultPortConfig.uplinkTeamingPolicy, pg_conf["teaming"]
         )
@@ -1027,16 +991,10 @@ def update_dvportgroup(portgroup_dict, portgroup, dvs, service_instance=True):
     dvs_refs = salt.utils.vmware.get_dvss(dc_ref, dvs_names=[dvs])
     if not dvs_refs:
         raise VMwareObjectRetrievalError("DVS '{}' was not " "retrieved".format(dvs))
-    pg_refs = salt.utils.vmware.get_dvportgroups(
-        dvs_refs[0], portgroup_names=[portgroup]
-    )
+    pg_refs = salt.utils.vmware.get_dvportgroups(dvs_refs[0], portgroup_names=[portgroup])
     if not pg_refs:
-        raise VMwareObjectRetrievalError(
-            "Portgroup '{}' was not " "retrieved".format(portgroup)
-        )
-    pg_props = salt.utils.vmware.get_properties_of_managed_object(
-        pg_refs[0], ["config"]
-    )
+        raise VMwareObjectRetrievalError("Portgroup '{}' was not " "retrieved".format(portgroup))
+    pg_props = salt.utils.vmware.get_properties_of_managed_object(pg_refs[0], ["config"])
     spec = vim.DVPortgroupConfigSpec()
     # Copy existing properties in spec
     for prop in [
@@ -1090,13 +1048,9 @@ def remove_dvportgroup(portgroup, dvs, service_instance=None):
     dvs_refs = salt.utils.vmware.get_dvss(dc_ref, dvs_names=[dvs])
     if not dvs_refs:
         raise VMwareObjectRetrievalError("DVS '{}' was not " "retrieved".format(dvs))
-    pg_refs = salt.utils.vmware.get_dvportgroups(
-        dvs_refs[0], portgroup_names=[portgroup]
-    )
+    pg_refs = salt.utils.vmware.get_dvportgroups(dvs_refs[0], portgroup_names=[portgroup])
     if not pg_refs:
-        raise VMwareObjectRetrievalError(
-            "Portgroup '{}' was not " "retrieved".format(portgroup)
-        )
+        raise VMwareObjectRetrievalError("Portgroup '{}' was not " "retrieved".format(portgroup))
     salt.utils.vmware.remove_dvportgroup(pg_refs[0])
     return True
 
@@ -1333,9 +1287,7 @@ def add_host_to_dvs(
     )
     dvs = salt.utils.vmware._get_dvs(service_instance, dvs_name)
     if not dvs:
-        ret["message"].append(
-            "No Distributed Virtual Switch found with name {}".format(dvs_name)
-        )
+        ret["message"].append("No Distributed Virtual Switch found with name {}".format(dvs_name))
         ret["success"] = False
 
     target_portgroup = salt.utils.vmware._get_dvs_portgroup(dvs, target_portgroup_name)
@@ -1345,9 +1297,7 @@ def add_host_to_dvs(
         )
         ret["success"] = False
 
-    uplink_portgroup = salt.utils.vmware._get_dvs_uplink_portgroup(
-        dvs, uplink_portgroup_name
-    )
+    uplink_portgroup = salt.utils.vmware._get_dvs_uplink_portgroup(dvs, uplink_portgroup_name)
     if not uplink_portgroup:
         ret["message"].append(
             "No uplink portgroup found with name {}".format(uplink_portgroup_name)
@@ -1388,9 +1338,7 @@ def add_host_to_dvs(
         p_nics = salt.utils.vmware._get_pnics(host_ref)
         p_nic = [x for x in p_nics if x.device == vmnic_name]
         if len(p_nic) == 0:
-            ret[host_name].update(
-                {"message": "Physical nic {} not found".format(vmknic_name)}
-            )
+            ret[host_name].update({"message": "Physical nic {} not found".format(vmknic_name)})
             ret["success"] = False
             continue
 
@@ -1398,17 +1346,13 @@ def add_host_to_dvs(
         v_nic = [x for x in v_nics if x.device == vmknic_name]
 
         if len(v_nic) == 0:
-            ret[host_name].update(
-                {"message": "Virtual nic {} not found".format(vmnic_name)}
-            )
+            ret[host_name].update({"message": "Virtual nic {} not found".format(vmnic_name)})
             ret["success"] = False
             continue
 
         v_nic_mgr = salt.utils.vmware._get_vnic_manager(host_ref)
         if not v_nic_mgr:
-            ret[host_name].update(
-                {"message": "Unable to get the host's virtual nic manager."}
-            )
+            ret[host_name].update({"message": "Unable to get the host's virtual nic manager."})
             ret["success"] = False
             continue
 
@@ -1417,7 +1361,8 @@ def add_host_to_dvs(
         )
         pnic_backing = vim.dvs.HostMember.PnicBacking(pnicSpec=[dvs_pnic_spec])
         dvs_hostmember_config_spec = vim.dvs.HostMember.ConfigSpec(
-            host=host_ref, operation="add",
+            host=host_ref,
+            operation="add",
         )
         dvs_config = vim.DVSConfigSpec(
             configVersion=dvs.config.configVersion, host=[dvs_hostmember_config_spec]
@@ -1429,9 +1374,7 @@ def add_host_to_dvs(
             )
         except Exception as e:  # pylint: disable=broad-except
             if hasattr(e, "message") and hasattr(e.message, "msg"):
-                if not (
-                    host_name in e.message.msg and "already exists" in e.message.msg
-                ):
+                if not (host_name in e.message.msg and "already exists" in e.message.msg):
                     ret["success"] = False
                     ret[host_name].update({"message": e.message.msg})
                     continue
@@ -1477,28 +1420,19 @@ def add_host_to_dvs(
             vswitch=[vswitch_config],
             proxySwitch=[proxyswitch_config],
             portgroup=[
-                vim.HostPortGroupConfig(
-                    changeOperation="remove", spec=source_portgroup.spec
-                )
+                vim.HostPortGroupConfig(changeOperation="remove", spec=source_portgroup.spec)
             ],
             vnic=[virtual_nic_config],
         )
 
         try:
-            network_system.UpdateNetworkConfig(
-                changeMode="modify", config=host_network_config
-            )
+            network_system.UpdateNetworkConfig(changeMode="modify", config=host_network_config)
             ret[host_name].update({"status": True})
         except Exception as e:  # pylint: disable=broad-except
             if hasattr(e, "msg"):
-                ret[host_name].update(
-                    {"message": "Failed to migrate adapters ({})".format(e.msg)}
-                )
+                ret[host_name].update({"message": "Failed to migrate adapters ({})".format(e.msg)})
                 continue
             else:
                 raise
 
     return ret
-
-
-

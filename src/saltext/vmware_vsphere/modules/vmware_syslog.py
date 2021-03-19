@@ -1,3 +1,11 @@
+from salt.utils.decorators import _supports_proxies
+from salt.utils.decorators import depends
+from salt.utils.decorators import ignores_kwargs
+
+HAS_PYVMOMI = False
+HAS_ESX_CLI = False
+
+
 @depends(HAS_ESX_CLI)
 def syslog_service_reload(
     host, username, password, protocol=None, port=None, esxi_hosts=None, credstore=None
@@ -465,4 +473,3 @@ def reset_syslog_config(
         ret.update({host: response_dict})
 
     return ret
-

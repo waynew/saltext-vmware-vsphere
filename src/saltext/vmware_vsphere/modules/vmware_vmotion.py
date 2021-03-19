@@ -1,3 +1,11 @@
+from salt.utils.decorators import _supports_proxies
+from salt.utils.decorators import depends
+from salt.utils.decorators import ignores_kwargs
+
+HAS_PYVMOMI = False
+HAS_ESX_CLI = False
+
+
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
 def get_vmotion_enabled(
@@ -235,5 +243,3 @@ def vmotion_enable(
         ret.update({host_name: {"VMotion Enabled": True}})
 
     return ret
-
-

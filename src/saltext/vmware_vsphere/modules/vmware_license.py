@@ -1,3 +1,11 @@
+from salt.utils.decorators import _supports_proxies
+from salt.utils.decorators import depends
+from salt.utils.decorators import ignores_kwargs
+
+HAS_PYVMOMI = False
+HAS_ESX_CLI = False
+
+
 @depends(HAS_PYVMOMI)
 @_supports_proxies("esxcluster", "esxdatacenter")
 @_gets_service_instance_via_proxy
@@ -63,9 +71,7 @@ def add_license(key, description, safety_checks=True, service_instance=None):
 @depends(HAS_JSONSCHEMA)
 @_supports_proxies("esxcluster", "esxdatacenter")
 @_gets_service_instance_via_proxy
-def list_assigned_licenses(
-    entity, entity_display_name, license_keys=None, service_instance=None
-):
+def list_assigned_licenses(entity, entity_display_name, license_keys=None, service_instance=None):
     """
     Lists the licenses assigned to an entity
 
@@ -157,9 +163,7 @@ def assign_license(
     if safety_checks:
         licenses = salt.utils.vmware.get_licenses(service_instance)
         if not [l for l in licenses if l.licenseKey == license_key]:
-            raise VMwareObjectRetrievalError(
-                "License '{}' wasn't found" "".format(license_name)
-            )
+            raise VMwareObjectRetrievalError("License '{}' wasn't found" "".format(license_name))
     salt.utils.vmware.assign_license(
         service_instance,
         license_key,
