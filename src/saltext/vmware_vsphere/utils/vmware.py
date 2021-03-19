@@ -125,58 +125,6 @@ def __virtual__():
     return False, "Missing dependency: The salt.utils.vmware module requires pyVmomi."
 
 
-def esxcli(
-    host, user, pwd, cmd, protocol=None, port=None, esxi_host=None, credstore=None
-):
-    """
-    Shell out and call the specified esxcli command, parse the result
-    and return something sane.
-
-    :param host: ESXi or vCenter host to connect to
-    :param user: User to connect as, usually root
-    :param pwd: Password to connect with
-    :param port: TCP port
-    :param cmd: esxcli command and arguments
-    :param esxi_host: If `host` is a vCenter host, then esxi_host is the
-                      ESXi machine on which to execute this command
-    :param credstore: Optional path to the credential store file
-
-    :return: Dictionary
-    """
-
-    esx_cmd = salt.utils.path.which("esxcli")
-    if not esx_cmd:
-        log.error(
-            "Missing dependency: The salt.utils.vmware.esxcli function requires ESXCLI."
-        )
-        return False
-
-    # Set default port and protocol if none are provided.
-    if port is None:
-        port = 443
-    if protocol is None:
-        protocol = "https"
-
-    if credstore:
-        esx_cmd += " --credstore '{}'".format(credstore)
-
-    if not esxi_host:
-        # Then we are connecting directly to an ESXi server,
-        # 'host' points at that server, and esxi_host is a reference to the
-        # ESXi instance we are manipulating
-        esx_cmd += " -s {} -u {} -p '{}' " "--protocol={} --portnumber={} {}".format(
-            host, user, pwd, protocol, port, cmd
-        )
-    else:
-        esx_cmd += " -s {} -h {} -u {} -p '{}' --protocol={} --portnumber={} {}".format(
-            host, esxi_host, user, pwd, protocol, port, cmd
-        )
-
-    ret = salt.modules.cmdmod.run_all(esx_cmd, output_loglevel="quiet")
-
-    return ret
-
-
 def get_vsphere_client(
     server, username, password, session=None, verify_ssl=True, ca_bundle=None
 ):
