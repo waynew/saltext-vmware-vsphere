@@ -40,6 +40,66 @@ __virtualname__ = "vmware_tag"
 def __virtual__():
     return __virtualname__
 
+
+def _get_client(server, username, password, verify_ssl=None, ca_bundle=None):
+    """
+    Establish client through proxy or with user provided credentials.
+
+    :param basestring server:
+        Target DNS or IP of vCenter center.
+    :param basestring username:
+        Username associated with the vCenter center.
+    :param basestring password:
+        Password associated with the vCenter center.
+    :param boolean verify_ssl:
+        Verify the SSL certificate. Default: True
+    :param basestring ca_bundle:
+        Path to the ca bundle to use when verifying SSL certificates.
+    :returns:
+        vSphere Client instance.
+    :rtype:
+        vSphere.Client
+    """
+    # Get salted vSphere Client
+    details = None
+    if not (server and username and password):
+        # User didn't provide CLI args so use proxy information
+        details = __salt__["vcenter.get_details"]()
+        server = details["vcenter"]
+        username = details["username"]
+        password = details["password"]
+
+    if verify_ssl is None:
+        if details is None:
+            details = __salt__["vcenter.get_details"]()
+        verify_ssl = details.get("verify_ssl", True)
+        if verify_ssl is None:
+            verify_ssl = True
+
+    if ca_bundle is None:
+        if details is None:
+            details = __salt__["vcenter.get_details"]()
+        ca_bundle = details.get("ca_bundle", None)
+
+    if verify_ssl is False and ca_bundle is not None:
+        log.error("Cannot set verify_ssl to False and ca_bundle together")
+        return False
+
+    if ca_bundle:
+        ca_bundle = salt.utils.http.get_ca_bundle({"ca_bundle": ca_bundle})
+
+    # Establish connection with client
+    client = salt.utils.vmware.get_vsphere_client(
+        server=server,
+        username=username,
+        password=password,
+        verify_ssl=verify_ssl,
+        ca_bundle=ca_bundle,
+    )
+    # Will return None if utility function causes Unauthenticated error
+    return client
+
+
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
 @_supports_proxies("vcenter")
 @_gets_service_instance_via_proxy

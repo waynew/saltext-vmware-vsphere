@@ -41,6 +41,1361 @@ def __virtual__():
     return __virtualname__
 
 
+def _get_scsi_controller_key(bus_number, scsi_ctrls):
+    """
+    Returns key number of the SCSI controller keys
+
+    bus_number
+        Controller bus number from the adapter
+
+    scsi_ctrls
+        List of SCSI Controller objects (old+newly created)
+    """
+    # list of new/old VirtualSCSIController objects, both new and old objects
+    # should contain a key attribute key should be a negative integer in case
+    # of a new object
+    keys = [
+        ctrl.key for ctrl in scsi_ctrls if scsi_ctrls and ctrl.busNumber == bus_number
+    ]
+    if not keys:
+        raise salt.exceptions.VMwareVmCreationError(
+            "SCSI controller number {} doesn't exist".format(bus_number)
+        )
+    return keys[0]
+
+
+def _create_adapter_type(network_adapter, adapter_type, network_adapter_label=""):
+    """
+    Returns a vim.vm.device.VirtualEthernetCard object specifying a virtual
+    ethernet card information
+
+    network_adapter
+        None or VirtualEthernet object
+
+    adapter_type
+        String, type of adapter
+
+    network_adapter_label
+        string, network adapter name
+    """
+    log.trace(
+        "Configuring virtual machine network "
+        "adapter adapter_type={}".format(adapter_type)
+    )
+    if adapter_type in ["vmxnet", "vmxnet2", "vmxnet3", "e1000", "e1000e"]:
+        edited_network_adapter = salt.utils.vmware.get_network_adapter_type(
+            adapter_type
+        )
+        if isinstance(network_adapter, type(edited_network_adapter)):
+            edited_network_adapter = network_adapter
+        else:
+            if network_adapter:
+                log.trace(
+                    "Changing type of '{}' from"
+                    " '{}' to '{}'".format(
+                        network_adapter.deviceInfo.label,
+                        type(network_adapter).__name__.rsplit(".", 1)[1][7:].lower(),
+                        adapter_type,
+                    )
+                )
+    else:
+        # If device is edited and type not specified or does not match,
+        # don't change adapter type
+        if network_adapter:
+            if adapter_type:
+                log.error(
+                    "Cannot change type of '{}' to '{}'. "
+                    "Not changing type".format(
+                        network_adapter.deviceInfo.label, adapter_type
+                    )
+                )
+            edited_network_adapter = network_adapter
+        else:
+            if not adapter_type:
+                log.trace(
+                    "The type of '{}' has not been specified. "
+                    "Creating of default type 'vmxnet3'".format(network_adapter_label)
+                )
+            edited_network_adapter = vim.vm.device.VirtualVmxnet3()
+    return edited_network_adapter
+
+
+def _create_network_backing(network_name, switch_type, parent_ref):
+    """
+    Returns a vim.vm.device.VirtualDevice.BackingInfo object specifying a
+    virtual ethernet card backing information
+
+    network_name
+        string, network name
+
+    switch_type
+        string, type of switch
+
+    parent_ref
+        Parent reference to search for network
+    """
+    log.trace(
+        "Configuring virtual machine network backing network_name={} "
+        "switch_type={} parent={}".format(
+            network_name,
+            switch_type,
+            salt.utils.vmware.get_managed_object_name(parent_ref),
+        )
+    )
+    backing = {}
+    if network_name:
+        if switch_type == "standard":
+            networks = salt.utils.vmware.get_networks(
+                parent_ref, network_names=[network_name]
+            )
+            if not networks:
+                raise salt.exceptions.VMwareObjectRetrievalError(
+                    "The network '{}' could not be " "retrieved.".format(network_name)
+                )
+            network_ref = networks[0]
+            backing = vim.vm.device.VirtualEthernetCard.NetworkBackingInfo()
+            backing.deviceName = network_name
+            backing.network = network_ref
+        elif switch_type == "distributed":
+            networks = salt.utils.vmware.get_dvportgroups(
+                parent_ref, portgroup_names=[network_name]
+            )
+            if not networks:
+                raise salt.exceptions.VMwareObjectRetrievalError(
+                    "The port group '{}' could not be "
+                    "retrieved.".format(network_name)
+                )
+            network_ref = networks[0]
+            dvs_port_connection = vim.dvs.PortConnection(
+                portgroupKey=network_ref.key,
+                switchUuid=network_ref.config.distributedVirtualSwitch.uuid,
+            )
+            backing = (
+                vim.vm.device.VirtualEthernetCard.DistributedVirtualPortBackingInfo()
+            )
+            backing.port = dvs_port_connection
+    return backing
+
+
+def _set_network_adapter_mapping(domain, gateway, ip_addr, subnet_mask, mac):
+    """
+    Returns a vim.vm.customization.AdapterMapping object containing the IP
+    properties of a network adapter card
+
+    domain
+        Domain of the host
+
+    gateway
+        Gateway address
+
+    ip_addr
+        IP address
+
+    subnet_mask
+        Subnet mask
+
+    mac
+        MAC address of the guest
+    """
+    adapter_mapping = vim.vm.customization.AdapterMapping()
+    adapter_mapping.macAddress = mac
+    adapter_mapping.adapter = vim.vm.customization.IPSettings()
+    if domain:
+        adapter_mapping.adapter.dnsDomain = domain
+    if gateway:
+        adapter_mapping.adapter.gateway = gateway
+    if ip_addr:
+        adapter_mapping.adapter.ip = vim.vm.customization.FixedIp(ipAddress=ip_addr)
+        adapter_mapping.adapter.subnetMask = subnet_mask
+    else:
+        adapter_mapping.adapter.ip = vim.vm.customization.DhcpIpGenerator()
+    return adapter_mapping
+
+
+def _get_device_by_key(devices, key):
+    """
+    Returns the device with the given key, raises error if the device is
+    not found.
+
+    devices
+        list of vim.vm.device.VirtualDevice objects
+
+    key
+        Unique key of device
+    """
+    device_keys = [d for d in devices if d.key == key]
+    if device_keys:
+        return device_keys[0]
+    else:
+        raise salt.exceptions.VMwareObjectNotFoundError(
+            "Virtual machine device with unique key " "{} does not exist".format(key)
+        )
+
+
+def _get_device_by_label(devices, label):
+    """
+    Returns the device with the given label, raises error if the device is
+    not found.
+
+    devices
+        list of vim.vm.device.VirtualDevice objects
+
+    key
+        Unique key of device
+    """
+    device_labels = [d for d in devices if d.deviceInfo.label == label]
+    if device_labels:
+        return device_labels[0]
+    else:
+        raise salt.exceptions.VMwareObjectNotFoundError(
+            "Virtual machine device with " "label {} does not exist".format(label)
+        )
+
+
+def _apply_hardware_version(hardware_version, config_spec, operation="add"):
+    """
+    Specifies vm container version or schedules upgrade,
+    returns True on change and False if nothing have been changed.
+
+    hardware_version
+        Hardware version string eg. vmx-08
+
+    config_spec
+        Configuration spec object
+
+    operation
+        Defines the operation which should be used,
+        the possibles values: 'add' and 'edit', the default value is 'add'
+    """
+    log.trace(
+        "Configuring virtual machine hardware "
+        "version version={}".format(hardware_version)
+    )
+    if operation == "edit":
+        log.trace(
+            "Scheduling hardware version " "upgrade to {}".format(hardware_version)
+        )
+        scheduled_hardware_upgrade = vim.vm.ScheduledHardwareUpgradeInfo()
+        scheduled_hardware_upgrade.upgradePolicy = "always"
+        scheduled_hardware_upgrade.versionKey = hardware_version
+        config_spec.scheduledHardwareUpgradeInfo = scheduled_hardware_upgrade
+    elif operation == "add":
+        config_spec.version = str(hardware_version)
+
+
+def _apply_cpu_config(config_spec, cpu_props):
+    """
+    Sets CPU core count to the given value
+
+    config_spec
+        vm.ConfigSpec object
+
+    cpu_props
+        CPU properties dict
+    """
+    log.trace(
+        "Configuring virtual machine CPU " "settings cpu_props={}".format(cpu_props)
+    )
+    if "count" in cpu_props:
+        config_spec.numCPUs = int(cpu_props["count"])
+    if "cores_per_socket" in cpu_props:
+        config_spec.numCoresPerSocket = int(cpu_props["cores_per_socket"])
+    if "nested" in cpu_props and cpu_props["nested"]:
+        config_spec.nestedHVEnabled = cpu_props["nested"]  # True
+    if "hotadd" in cpu_props and cpu_props["hotadd"]:
+        config_spec.cpuHotAddEnabled = cpu_props["hotadd"]  # True
+    if "hotremove" in cpu_props and cpu_props["hotremove"]:
+        config_spec.cpuHotRemoveEnabled = cpu_props["hotremove"]  # True
+
+
+def _apply_memory_config(config_spec, memory):
+    """
+    Sets memory size to the given value
+
+    config_spec
+        vm.ConfigSpec object
+
+    memory
+        Memory size and unit
+    """
+    log.trace("Configuring virtual machine memory " "settings memory={}".format(memory))
+    if "size" in memory and "unit" in memory:
+        try:
+            if memory["unit"].lower() == "kb":
+                memory_mb = memory["size"] / 1024
+            elif memory["unit"].lower() == "mb":
+                memory_mb = memory["size"]
+            elif memory["unit"].lower() == "gb":
+                memory_mb = int(float(memory["size"]) * 1024)
+        except (TypeError, ValueError):
+            memory_mb = int(memory["size"])
+        config_spec.memoryMB = memory_mb
+    if "reservation_max" in memory:
+        config_spec.memoryReservationLockedToMax = memory["reservation_max"]
+    if "hotadd" in memory:
+        config_spec.memoryHotAddEnabled = memory["hotadd"]
+
+
+def _apply_network_adapter_config(
+    key,
+    network_name,
+    adapter_type,
+    switch_type,
+    network_adapter_label=None,
+    operation="add",
+    connectable=None,
+    mac=None,
+    parent=None,
+):
+    """
+    Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit a
+    network device
+
+    network_adapter_label
+        Network adapter label
+
+    key
+        Unique key for device creation
+
+    network_name
+        Network or port group name
+
+    adapter_type
+        Type of the adapter eg. vmxnet3
+
+    switch_type
+        Type of the switch: standard or distributed
+
+    operation
+        Type of operation: add or edit
+
+    connectable
+        Dictionary with the device connection properties
+
+    mac
+        MAC address of the network adapter
+
+    parent
+        Parent object reference
+    """
+    adapter_type.strip().lower()
+    switch_type.strip().lower()
+    log.trace(
+        "Configuring virtual machine network adapter "
+        "network_adapter_label={} network_name={} "
+        "adapter_type={} switch_type={} mac={}".format(
+            network_adapter_label, network_name, adapter_type, switch_type, mac
+        )
+    )
+    network_spec = vim.vm.device.VirtualDeviceSpec()
+    network_spec.device = _create_adapter_type(
+        network_spec.device, adapter_type, network_adapter_label=network_adapter_label
+    )
+    network_spec.device.deviceInfo = vim.Description()
+    if operation == "add":
+        network_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+    elif operation == "edit":
+        network_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    if switch_type and network_name:
+        network_spec.device.backing = _create_network_backing(
+            network_name, switch_type, parent
+        )
+        network_spec.device.deviceInfo.summary = network_name
+    if key:
+        # random negative integer for creations, concrete device key
+        # for updates
+        network_spec.device.key = key
+    if network_adapter_label:
+        network_spec.device.deviceInfo.label = network_adapter_label
+    if mac:
+        network_spec.device.macAddress = mac
+        network_spec.device.addressType = "Manual"
+    network_spec.device.wakeOnLanEnabled = True
+    if connectable:
+        network_spec.device.connectable = vim.vm.device.VirtualDevice.ConnectInfo()
+        network_spec.device.connectable.startConnected = connectable["start_connected"]
+        network_spec.device.connectable.allowGuestControl = connectable[
+            "allow_guest_control"
+        ]
+    return network_spec
+
+
+def _apply_scsi_controller(
+    adapter, adapter_type, bus_sharing, key, bus_number, operation
+):
+    """
+    Returns a vim.vm.device.VirtualDeviceSpec object specifying to
+    add/edit a SCSI controller
+
+    adapter
+        SCSI controller adapter name
+
+    adapter_type
+        SCSI controller adapter type eg. paravirtual
+
+    bus_sharing
+         SCSI controller bus sharing eg. virtual_sharing
+
+    key
+        SCSI controller unique key
+
+    bus_number
+        Device bus number property
+
+    operation
+        Describes the operation which should be done on the object,
+        the possibles values: 'add' and 'edit', the default value is 'add'
+
+    .. code-block:: bash
+
+        scsi:
+          adapter: 'SCSI controller 0'
+          type: paravirtual or lsilogic or lsilogic_sas
+          bus_sharing: 'no_sharing' or 'virtual_sharing' or 'physical_sharing'
+    """
+    log.trace(
+        "Configuring scsi controller adapter={} adapter_type={} "
+        "bus_sharing={} key={} bus_number={}".format(
+            adapter, adapter_type, bus_sharing, key, bus_number
+        )
+    )
+    scsi_spec = vim.vm.device.VirtualDeviceSpec()
+    if adapter_type == "lsilogic":
+        summary = "LSI Logic"
+        scsi_spec.device = vim.vm.device.VirtualLsiLogicController()
+    elif adapter_type == "lsilogic_sas":
+        summary = "LSI Logic Sas"
+        scsi_spec.device = vim.vm.device.VirtualLsiLogicSASController()
+    elif adapter_type == "paravirtual":
+        summary = "VMware paravirtual SCSI"
+        scsi_spec.device = vim.vm.device.ParaVirtualSCSIController()
+    elif adapter_type == "buslogic":
+        summary = "Bus Logic"
+        scsi_spec.device = vim.vm.device.VirtualBusLogicController()
+    if operation == "add":
+        scsi_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+    elif operation == "edit":
+        scsi_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    scsi_spec.device.key = key
+    scsi_spec.device.busNumber = bus_number
+    scsi_spec.device.deviceInfo = vim.Description()
+    scsi_spec.device.deviceInfo.label = adapter
+    scsi_spec.device.deviceInfo.summary = summary
+    if bus_sharing == "virtual_sharing":
+        # Virtual disks can be shared between virtual machines on
+        # the same server
+        scsi_spec.device.sharedBus = (
+            vim.vm.device.VirtualSCSIController.Sharing.virtualSharing
+        )
+    elif bus_sharing == "physical_sharing":
+        # Virtual disks can be shared between virtual machines on any server
+        scsi_spec.device.sharedBus = (
+            vim.vm.device.VirtualSCSIController.Sharing.physicalSharing
+        )
+    elif bus_sharing == "no_sharing":
+        # Virtual disks cannot be shared between virtual machines
+        scsi_spec.device.sharedBus = (
+            vim.vm.device.VirtualSCSIController.Sharing.noSharing
+        )
+    return scsi_spec
+
+
+def _create_ide_controllers(ide_controllers):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+    IDE controllers
+
+    ide_controllers
+        IDE properties
+    """
+    ide_ctrls = []
+    keys = range(-200, -250, -1)
+    if ide_controllers:
+        devs = [ide["adapter"] for ide in ide_controllers]
+        log.trace("Creating IDE controllers {}".format(devs))
+        for ide, key in zip(ide_controllers, keys):
+            ide_ctrls.append(
+                _apply_ide_controller_config(ide["adapter"], "add", key, abs(key + 200))
+            )
+    return ide_ctrls
+
+
+def _apply_ide_controller_config(ide_controller_label, operation, key, bus_number=0):
+    """
+    Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit an
+    IDE controller
+
+    ide_controller_label
+        Controller label of the IDE adapter
+
+    operation
+        Type of operation: add or edit
+
+    key
+        Unique key of the device
+
+    bus_number
+        Device bus number property
+    """
+    log.trace(
+        "Configuring IDE controller "
+        "ide_controller_label={}".format(ide_controller_label)
+    )
+    ide_spec = vim.vm.device.VirtualDeviceSpec()
+    ide_spec.device = vim.vm.device.VirtualIDEController()
+    if operation == "add":
+        ide_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+    if operation == "edit":
+        ide_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    ide_spec.device.key = key
+    ide_spec.device.busNumber = bus_number
+    if ide_controller_label:
+        ide_spec.device.deviceInfo = vim.Description()
+        ide_spec.device.deviceInfo.label = ide_controller_label
+        ide_spec.device.deviceInfo.summary = ide_controller_label
+    return ide_spec
+
+
+def _create_sata_controllers(sata_controllers):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+    SATA controllers
+
+    sata_controllers
+        SATA properties
+    """
+    sata_ctrls = []
+    keys = range(-15000, -15050, -1)
+    if sata_controllers:
+        devs = [sata["adapter"] for sata in sata_controllers]
+        log.trace("Creating SATA controllers {}".format(devs))
+        for sata, key in zip(sata_controllers, keys):
+            sata_ctrls.append(
+                _apply_sata_controller_config(
+                    sata["adapter"], "add", key, sata["bus_number"]
+                )
+            )
+    return sata_ctrls
+
+
+def _apply_sata_controller_config(sata_controller_label, operation, key, bus_number=0):
+    """
+    Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit a
+    SATA controller
+
+    sata_controller_label
+        Controller label of the SATA adapter
+
+    operation
+        Type of operation: add or edit
+
+    key
+        Unique key of the device
+
+    bus_number
+        Device bus number property
+    """
+    log.trace(
+        "Configuring SATA controller "
+        "sata_controller_label={}".format(sata_controller_label)
+    )
+    sata_spec = vim.vm.device.VirtualDeviceSpec()
+    sata_spec.device = vim.vm.device.VirtualAHCIController()
+    if operation == "add":
+        sata_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+    elif operation == "edit":
+        sata_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    sata_spec.device.key = key
+    sata_spec.device.controllerKey = 100
+    sata_spec.device.busNumber = bus_number
+    if sata_controller_label:
+        sata_spec.device.deviceInfo = vim.Description()
+        sata_spec.device.deviceInfo.label = sata_controller_label
+        sata_spec.device.deviceInfo.summary = sata_controller_label
+    return sata_spec
+
+
+def _apply_cd_drive(
+    drive_label,
+    key,
+    device_type,
+    operation,
+    client_device=None,
+    datastore_iso_file=None,
+    connectable=None,
+    controller_key=200,
+    parent_ref=None,
+):
+    """
+    Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit a
+    CD/DVD drive
+
+    drive_label
+        Leble of the CD/DVD drive
+
+    key
+        Unique key of the device
+
+    device_type
+        Type of the device: client or iso
+
+    operation
+        Type of operation: add or edit
+
+    client_device
+        Client device properties
+
+    datastore_iso_file
+        ISO properties
+
+    connectable
+        Connection info for the device
+
+    controller_key
+        Controller unique identifier to which we will attach this device
+
+    parent_ref
+        Parent object
+
+    .. code-block:: bash
+
+        cd:
+            adapter: "CD/DVD drive 1"
+            device_type: datastore_iso_file or client_device
+            client_device:
+              mode: atapi or passthrough
+            datastore_iso_file:
+              path: "[share] iso/disk.iso"
+            connectable:
+              start_connected: True
+              allow_guest_control:
+    """
+    log.trace(
+        "Configuring CD/DVD drive drive_label={} "
+        "device_type={} client_device={} "
+        "datastore_iso_file={}".format(
+            drive_label, device_type, client_device, datastore_iso_file
+        )
+    )
+    drive_spec = vim.vm.device.VirtualDeviceSpec()
+    drive_spec.device = vim.vm.device.VirtualCdrom()
+    drive_spec.device.deviceInfo = vim.Description()
+    if operation == "add":
+        drive_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+    elif operation == "edit":
+        drive_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    if device_type == "datastore_iso_file":
+        drive_spec.device.backing = vim.vm.device.VirtualCdrom.IsoBackingInfo()
+        drive_spec.device.backing.fileName = datastore_iso_file["path"]
+        datastore = datastore_iso_file["path"].partition("[")[-1].rpartition("]")[0]
+        datastore_object = salt.utils.vmware.get_datastores(
+            salt.utils.vmware.get_service_instance_from_managed_object(parent_ref),
+            parent_ref,
+            datastore_names=[datastore],
+        )[0]
+        if datastore_object:
+            drive_spec.device.backing.datastore = datastore_object
+        drive_spec.device.deviceInfo.summary = "{}".format(datastore_iso_file["path"])
+    elif device_type == "client_device":
+        if client_device["mode"] == "passthrough":
+            drive_spec.device.backing = (
+                vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo()
+            )
+        elif client_device["mode"] == "atapi":
+            drive_spec.device.backing = (
+                vim.vm.device.VirtualCdrom.RemoteAtapiBackingInfo()
+            )
+    drive_spec.device.key = key
+    drive_spec.device.deviceInfo.label = drive_label
+    drive_spec.device.controllerKey = controller_key
+    drive_spec.device.connectable = vim.vm.device.VirtualDevice.ConnectInfo()
+    if connectable:
+        drive_spec.device.connectable.startConnected = connectable["start_connected"]
+        drive_spec.device.connectable.allowGuestControl = connectable[
+            "allow_guest_control"
+        ]
+    return drive_spec
+
+def _apply_hard_disk(
+    unit_number,
+    key,
+    operation,
+    disk_label=None,
+    size=None,
+    unit="GB",
+    controller_key=None,
+    thin_provision=None,
+    eagerly_scrub=None,
+    datastore=None,
+    filename=None,
+):
+    """
+    Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit
+    a virtual disk device
+
+    unit_number
+        Add network adapter to this address
+
+    key
+        Device key number
+
+    operation
+        Action which should be done on the device add or edit
+
+    disk_label
+        Label of the new disk, can be overridden
+
+    size
+        Size of the disk
+
+    unit
+        Unit of the size, can be GB, MB, KB
+
+    controller_key
+        Unique umber of the controller key
+
+    thin_provision
+        Boolean for thin provision
+
+    eagerly_scrub
+        Boolean for eagerly scrubbing
+
+    datastore
+        Datastore name where the disk will be located
+
+    filename
+        Full file name of the vm disk
+    """
+    log.trace(
+        "Configuring hard disk {} size={}, unit={}, "
+        "controller_key={}, thin_provision={}, "
+        "eagerly_scrub={}, datastore={}, "
+        "filename={}".format(
+            disk_label,
+            size,
+            unit,
+            controller_key,
+            thin_provision,
+            eagerly_scrub,
+            datastore,
+            filename,
+        )
+    )
+    disk_spec = vim.vm.device.VirtualDeviceSpec()
+    disk_spec.device = vim.vm.device.VirtualDisk()
+    disk_spec.device.key = key
+    disk_spec.device.unitNumber = unit_number
+    disk_spec.device.deviceInfo = vim.Description()
+    if size:
+        convert_size = salt.utils.vmware.convert_to_kb(unit, size)
+        disk_spec.device.capacityInKB = convert_size["size"]
+    if disk_label:
+        disk_spec.device.deviceInfo.label = disk_label
+    if thin_provision is not None or eagerly_scrub is not None:
+        disk_spec.device.backing = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
+        disk_spec.device.backing.diskMode = "persistent"
+    if thin_provision is not None:
+        disk_spec.device.backing.thinProvisioned = thin_provision
+    if eagerly_scrub is not None and eagerly_scrub != "None":
+        disk_spec.device.backing.eagerlyScrub = eagerly_scrub
+    if controller_key:
+        disk_spec.device.controllerKey = controller_key
+    if operation == "add":
+        disk_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+        disk_spec.device.backing.fileName = "[{}] {}".format(
+            salt.utils.vmware.get_managed_object_name(datastore), filename
+        )
+        disk_spec.fileOperation = vim.vm.device.VirtualDeviceSpec.FileOperation.create
+    elif operation == "edit":
+        disk_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    return disk_spec
+
+
+def _create_disks(service_instance, disks, scsi_controllers=None, parent=None):
+    """
+    Returns a list of disk specs representing the disks to be created for a
+    virtual machine
+
+    service_instance
+        Service instance (vim.ServiceInstance) of the vCenter.
+        Default is None.
+
+    disks
+        List of disks with properties
+
+    scsi_controllers
+        List of SCSI controllers
+
+    parent
+        Parent object reference
+
+    .. code-block:: bash
+
+        disk:
+          adapter: 'Hard disk 1'
+          size: 16
+          unit: GB
+          address: '0:0'
+          controller: 'SCSI controller 0'
+          thin_provision: False
+          eagerly_scrub: False
+          datastore: 'myshare'
+          filename: 'vm/mydisk.vmdk'
+    """
+    disk_specs = []
+    keys = range(-2000, -2050, -1)
+    if disks:
+        devs = [disk["adapter"] for disk in disks]
+        log.trace("Creating disks {}".format(devs))
+    for disk, key in zip(disks, keys):
+        # create the disk
+        filename, datastore, datastore_ref = None, None, None
+        size = float(disk["size"])
+        # when creating both SCSI controller and Hard disk at the same time
+        # we need the randomly assigned (temporary) key of the newly created
+        # SCSI controller
+        controller_key = 1000  # Default is the first SCSI controller
+        if "address" in disk:  # 0:0
+            controller_bus_number, unit_number = disk["address"].split(":")
+            controller_bus_number = int(controller_bus_number)
+            unit_number = int(unit_number)
+            controller_key = _get_scsi_controller_key(
+                controller_bus_number, scsi_ctrls=scsi_controllers
+            )
+        elif "controller" in disk:
+            for contr in scsi_controllers:
+                if contr["label"] == disk["controller"]:
+                    controller_key = contr["key"]
+                    break
+            else:
+                raise salt.exceptions.VMwareObjectNotFoundError(
+                    "The given controller does not exist: "
+                    "{}".format(disk["controller"])
+                )
+        if "datastore" in disk:
+            datastore_ref = salt.utils.vmware.get_datastores(
+                service_instance, parent, datastore_names=[disk["datastore"]]
+            )[0]
+            datastore = disk["datastore"]
+        if "filename" in disk:
+            filename = disk["filename"]
+        # XOR filename, datastore
+        if (not filename and datastore) or (filename and not datastore):
+            raise salt.exceptions.ArgumentValueError(
+                "You must specify both filename and datastore attributes"
+                " to place your disk to a specific datastore "
+                "{}, {}".format(datastore, filename)
+            )
+        disk_spec = _apply_hard_disk(
+            unit_number,
+            key,
+            disk_label=disk["adapter"],
+            size=size,
+            unit=disk["unit"],
+            controller_key=controller_key,
+            operation="add",
+            thin_provision=disk["thin_provision"],
+            eagerly_scrub=disk["eagerly_scrub"] if "eagerly_scrub" in disk else None,
+            datastore=datastore_ref,
+            filename=filename,
+        )
+        disk_specs.append(disk_spec)
+        unit_number += 1
+    return disk_specs
+
+
+def _create_scsi_devices(scsi_devices):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+    SCSI controllers
+
+    scsi_devices:
+        List of SCSI device properties
+    """
+    keys = range(-1000, -1050, -1)
+    scsi_specs = []
+    if scsi_devices:
+        devs = [scsi["adapter"] for scsi in scsi_devices]
+        log.trace("Creating SCSI devices {}".format(devs))
+        # unitNumber for disk attachment, 0:0 1st 0 is the controller busNumber,
+        # 2nd is the unitNumber
+        for (key, scsi_controller) in zip(keys, scsi_devices):
+            # create the SCSI controller
+            scsi_spec = _apply_scsi_controller(
+                scsi_controller["adapter"],
+                scsi_controller["type"],
+                scsi_controller["bus_sharing"],
+                key,
+                scsi_controller["bus_number"],
+                "add",
+            )
+            scsi_specs.append(scsi_spec)
+    return scsi_specs
+
+
+def _create_network_adapters(network_interfaces, parent=None):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+    the interfaces to be created for a virtual machine
+
+    network_interfaces
+        List of network interfaces and properties
+
+    parent
+        Parent object reference
+
+    .. code-block:: bash
+
+        interfaces:
+          adapter: 'Network adapter 1'
+          name: vlan100
+          switch_type: distributed or standard
+          adapter_type: vmxnet3 or vmxnet, vmxnet2, vmxnet3, e1000, e1000e
+          mac: '00:11:22:33:44:55'
+    """
+    network_specs = []
+    nics_settings = []
+    keys = range(-4000, -4050, -1)
+    if network_interfaces:
+        devs = [inter["adapter"] for inter in network_interfaces]
+        log.trace("Creating network interfaces {}".format(devs))
+        for interface, key in zip(network_interfaces, keys):
+            network_spec = _apply_network_adapter_config(
+                key,
+                interface["name"],
+                interface["adapter_type"],
+                interface["switch_type"],
+                network_adapter_label=interface["adapter"],
+                operation="add",
+                connectable=interface["connectable"]
+                if "connectable" in interface
+                else None,
+                mac=interface["mac"],
+                parent=parent,
+            )
+            network_specs.append(network_spec)
+            if "mapping" in interface:
+                adapter_mapping = _set_network_adapter_mapping(
+                    interface["mapping"]["domain"],
+                    interface["mapping"]["gateway"],
+                    interface["mapping"]["ip_addr"],
+                    interface["mapping"]["subnet_mask"],
+                    interface["mac"],
+                )
+                nics_settings.append(adapter_mapping)
+    return (network_specs, nics_settings)
+
+
+def _apply_serial_port(serial_device_spec, key, operation="add"):
+    """
+    Returns a vim.vm.device.VirtualSerialPort representing a serial port
+    component
+
+    serial_device_spec
+        Serial device properties
+
+    key
+        Unique key of the device
+
+    operation
+        Add or edit the given device
+
+    .. code-block:: bash
+
+        serial_ports:
+            adapter: 'Serial port 1'
+            backing:
+              type: uri
+              uri: 'telnet://something:port'
+              direction: <client|server>
+              filename: 'service_uri'
+            connectable:
+              allow_guest_control: True
+              start_connected: True
+            yield: False
+    """
+    log.trace(
+        "Creating serial port adapter={} type={} connectable={} "
+        "yield={}".format(
+            serial_device_spec["adapter"],
+            serial_device_spec["type"],
+            serial_device_spec["connectable"],
+            serial_device_spec["yield"],
+        )
+    )
+    device_spec = vim.vm.device.VirtualDeviceSpec()
+    device_spec.device = vim.vm.device.VirtualSerialPort()
+    if operation == "add":
+        device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+    elif operation == "edit":
+        device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+    connect_info = vim.vm.device.VirtualDevice.ConnectInfo()
+    type_backing = None
+
+    if serial_device_spec["type"] == "network":
+        type_backing = vim.vm.device.VirtualSerialPort.URIBackingInfo()
+        if "uri" not in serial_device_spec["backing"].keys():
+            raise ValueError("vSPC proxy URI not specified in config")
+        if "uri" not in serial_device_spec["backing"].keys():
+            raise ValueError("vSPC Direction not specified in config")
+        if "filename" not in serial_device_spec["backing"].keys():
+            raise ValueError("vSPC Filename not specified in config")
+        type_backing.proxyURI = serial_device_spec["backing"]["uri"]
+        type_backing.direction = serial_device_spec["backing"]["direction"]
+        type_backing.serviceURI = serial_device_spec["backing"]["filename"]
+    if serial_device_spec["type"] == "pipe":
+        type_backing = vim.vm.device.VirtualSerialPort.PipeBackingInfo()
+    if serial_device_spec["type"] == "file":
+        type_backing = vim.vm.device.VirtualSerialPort.FileBackingInfo()
+    if serial_device_spec["type"] == "device":
+        type_backing = vim.vm.device.VirtualSerialPort.DeviceBackingInfo()
+    connect_info.allowGuestControl = serial_device_spec["connectable"][
+        "allow_guest_control"
+    ]
+    connect_info.startConnected = serial_device_spec["connectable"]["start_connected"]
+    device_spec.device.backing = type_backing
+    device_spec.device.connectable = connect_info
+    device_spec.device.unitNumber = 1
+    device_spec.device.key = key
+    device_spec.device.yieldOnPoll = serial_device_spec["yield"]
+
+    return device_spec
+
+
+def _create_serial_ports(serial_ports):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec objects representing the
+    serial ports to be created for a virtual machine
+
+    serial_ports
+        Serial port properties
+    """
+    ports = []
+    keys = range(-9000, -9050, -1)
+    if serial_ports:
+        devs = [serial["adapter"] for serial in serial_ports]
+        log.trace("Creating serial ports {}".format(devs))
+        for port, key in zip(serial_ports, keys):
+            serial_port_device = _apply_serial_port(port, key, "add")
+            ports.append(serial_port_device)
+    return ports
+
+
+def _create_cd_drives(cd_drives, controllers=None, parent_ref=None):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec objects representing the
+    CD/DVD drives to be created for a virtual machine
+
+    cd_drives
+        CD/DVD drive properties
+
+    controllers
+        CD/DVD drive controllers (IDE, SATA)
+
+    parent_ref
+        Parent object reference
+    """
+    cd_drive_specs = []
+    keys = range(-3000, -3050, -1)
+    if cd_drives:
+        devs = [dvd["adapter"] for dvd in cd_drives]
+        log.trace("Creating cd/dvd drives {}".format(devs))
+        for drive, key in zip(cd_drives, keys):
+            # if a controller is not available/cannot be created we should use the
+            #  one which is available by default, this is 'IDE 0'
+            controller_key = 200
+            if controllers:
+                controller = _get_device_by_label(controllers, drive["controller"])
+                controller_key = controller.key
+            cd_drive_specs.append(
+                _apply_cd_drive(
+                    drive["adapter"],
+                    key,
+                    drive["device_type"],
+                    "add",
+                    client_device=drive["client_device"]
+                    if "client_device" in drive
+                    else None,
+                    datastore_iso_file=drive["datastore_iso_file"]
+                    if "datastore_iso_file" in drive
+                    else None,
+                    connectable=drive["connectable"]
+                    if "connectable" in drive
+                    else None,
+                    controller_key=controller_key,
+                    parent_ref=parent_ref,
+                )
+            )
+
+    return cd_drive_specs
+
+
+def _update_disks(disks_old_new):
+    """
+    Changes the disk size and returns the config spec objects in a list.
+    The controller property cannot be updated, because controller address
+    identifies the disk by the unit and bus number properties.
+
+    disks_diffs
+        List of old and new disk properties, the properties are dictionary
+        objects
+    """
+    disk_changes = []
+    if disks_old_new:
+        devs = [disk["old"]["address"] for disk in disks_old_new]
+        log.trace("Updating disks {}".format(devs))
+        for item in disks_old_new:
+            current_disk = item["old"]
+            next_disk = item["new"]
+            difference = recursive_diff(current_disk, next_disk)
+            difference.ignore_unset_values = False
+            if difference.changed():
+                if next_disk["size"] < current_disk["size"]:
+                    raise salt.exceptions.VMwareSaltError(
+                        "Disk cannot be downsized size={} unit={} "
+                        "controller_key={} "
+                        "unit_number={}".format(
+                            next_disk["size"],
+                            next_disk["unit"],
+                            current_disk["controller_key"],
+                            current_disk["unit_number"],
+                        )
+                    )
+                log.trace(
+                    "Virtual machine disk will be updated "
+                    "size={} unit={} controller_key={} "
+                    "unit_number={}".format(
+                        next_disk["size"],
+                        next_disk["unit"],
+                        current_disk["controller_key"],
+                        current_disk["unit_number"],
+                    )
+                )
+                device_config_spec = _apply_hard_disk(
+                    current_disk["unit_number"],
+                    current_disk["key"],
+                    "edit",
+                    size=next_disk["size"],
+                    unit=next_disk["unit"],
+                    controller_key=current_disk["controller_key"],
+                )
+                # The backing didn't change and we must supply one for
+                # reconfigure
+                device_config_spec.device.backing = current_disk["object"].backing
+                disk_changes.append(device_config_spec)
+
+    return disk_changes
+
+
+def _update_scsi_devices(scsis_old_new, current_disks):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec specifying  the scsi
+    properties as input the old and new configs are defined in a dictionary.
+
+    scsi_diffs
+        List of old and new scsi properties
+    """
+    device_config_specs = []
+    if scsis_old_new:
+        devs = [scsi["old"]["adapter"] for scsi in scsis_old_new]
+        log.trace("Updating SCSI controllers {}".format(devs))
+        for item in scsis_old_new:
+            next_scsi = item["new"]
+            current_scsi = item["old"]
+            difference = recursive_diff(current_scsi, next_scsi)
+            difference.ignore_unset_values = False
+            if difference.changed():
+                log.trace(
+                    "Virtual machine scsi device will be updated "
+                    "key={} bus_number={} type={} "
+                    "bus_sharing={}".format(
+                        current_scsi["key"],
+                        current_scsi["bus_number"],
+                        next_scsi["type"],
+                        next_scsi["bus_sharing"],
+                    )
+                )
+                # The sharedBus property is not optional
+                # The type can only be updated if we delete the original
+                # controller, create a new one with the properties and then
+                # attach the disk object to the newly created controller, even
+                # though the controller key stays the same the last step is
+                # mandatory
+                if next_scsi["type"] != current_scsi["type"]:
+                    device_config_specs.append(_delete_device(current_scsi["object"]))
+                    device_config_specs.append(
+                        _apply_scsi_controller(
+                            current_scsi["adapter"],
+                            next_scsi["type"],
+                            next_scsi["bus_sharing"],
+                            current_scsi["key"],
+                            current_scsi["bus_number"],
+                            "add",
+                        )
+                    )
+                    disks_to_update = []
+                    for disk_key in current_scsi["device"]:
+                        disk_objects = [disk["object"] for disk in current_disks]
+                        disks_to_update.append(
+                            _get_device_by_key(disk_objects, disk_key)
+                        )
+                    for current_disk in disks_to_update:
+                        disk_spec = vim.vm.device.VirtualDeviceSpec()
+                        disk_spec.device = current_disk
+                        disk_spec.operation = "edit"
+                        device_config_specs.append(disk_spec)
+                else:
+                    device_config_specs.append(
+                        _apply_scsi_controller(
+                            current_scsi["adapter"],
+                            current_scsi["type"],
+                            next_scsi["bus_sharing"],
+                            current_scsi["key"],
+                            current_scsi["bus_number"],
+                            "edit",
+                        )
+                    )
+    return device_config_specs
+
+
+def _update_network_adapters(interface_old_new, parent):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec specifying
+    configuration(s) for changed network adapters, the adapter type cannot
+    be changed, as input the old and new configs are defined in a dictionary.
+
+    interface_old_new
+        Dictionary with old and new keys which contains the current and the
+        next config for a network device
+
+    parent
+        Parent managed object reference
+    """
+    network_changes = []
+    if interface_old_new:
+        devs = [inter["old"]["mac"] for inter in interface_old_new]
+        log.trace("Updating network interfaces {}".format(devs))
+        for item in interface_old_new:
+            current_interface = item["old"]
+            next_interface = item["new"]
+            difference = recursive_diff(current_interface, next_interface)
+            difference.ignore_unset_values = False
+            if difference.changed():
+                log.trace(
+                    "Virtual machine network adapter will be updated "
+                    "switch_type={} name={} adapter_type={} "
+                    "mac={}".format(
+                        next_interface["switch_type"],
+                        next_interface["name"],
+                        current_interface["adapter_type"],
+                        current_interface["mac"],
+                    )
+                )
+                device_config_spec = _apply_network_adapter_config(
+                    current_interface["key"],
+                    next_interface["name"],
+                    current_interface["adapter_type"],
+                    next_interface["switch_type"],
+                    operation="edit",
+                    mac=current_interface["mac"],
+                    parent=parent,
+                )
+                network_changes.append(device_config_spec)
+    return network_changes
+
+
+def _update_serial_ports(serial_old_new):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec specifying to edit a
+    deployed serial port configuration to the new given config
+
+    serial_old_new
+         Dictionary with old and new keys which contains the current and the
+          next config for a serial port device
+    """
+    serial_changes = []
+    if serial_old_new:
+        devs = [serial["old"]["adapter"] for serial in serial_old_new]
+        log.trace("Updating serial ports {}".format(devs))
+        for item in serial_old_new:
+            current_serial = item["old"]
+            next_serial = item["new"]
+            difference = recursive_diff(current_serial, next_serial)
+            difference.ignore_unset_values = False
+            if difference.changed():
+                serial_changes.append(
+                    _apply_serial_port(next_serial, current_serial["key"], "edit")
+                )
+        return serial_changes
+
+
+def _update_cd_drives(drives_old_new, controllers=None, parent=None):
+    """
+    Returns a list of vim.vm.device.VirtualDeviceSpec specifying to edit a
+    deployed cd drive configuration to the new given config
+
+    drives_old_new
+        Dictionary with old and new keys which contains the current and the
+        next config for a cd drive
+
+    controllers
+        Controller device list
+
+    parent
+        Managed object reference of the parent object
+    """
+    cd_changes = []
+    if drives_old_new:
+        devs = [drive["old"]["adapter"] for drive in drives_old_new]
+        log.trace("Updating cd/dvd drives {}".format(devs))
+        for item in drives_old_new:
+            current_drive = item["old"]
+            new_drive = item["new"]
+            difference = recursive_diff(current_drive, new_drive)
+            difference.ignore_unset_values = False
+            if difference.changed():
+                if controllers:
+                    controller = _get_device_by_label(
+                        controllers, new_drive["controller"]
+                    )
+                    controller_key = controller.key
+                else:
+                    controller_key = current_drive["controller_key"]
+                cd_changes.append(
+                    _apply_cd_drive(
+                        current_drive["adapter"],
+                        current_drive["key"],
+                        new_drive["device_type"],
+                        "edit",
+                        client_device=new_drive["client_device"]
+                        if "client_device" in new_drive
+                        else None,
+                        datastore_iso_file=new_drive["datastore_iso_file"]
+                        if "datastore_iso_file" in new_drive
+                        else None,
+                        connectable=new_drive["connectable"],
+                        controller_key=controller_key,
+                        parent_ref=parent,
+                    )
+                )
+    return cd_changes
+
+
+def _delete_device(device):
+    """
+    Returns a vim.vm.device.VirtualDeviceSpec specifying to remove a virtual
+    machine device
+
+    device
+        Device data type object
+    """
+    log.trace("Deleting device with type {}".format(type(device)))
+    device_spec = vim.vm.device.VirtualDeviceSpec()
+    device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.remove
+    device_spec.device = device
+    return device_spec
+
+
 @depends(HAS_PYVMOMI)
 def power_on_vm(name, datacenter=None, **kwargs):
     """
