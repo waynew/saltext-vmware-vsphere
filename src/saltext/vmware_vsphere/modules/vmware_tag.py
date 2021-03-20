@@ -557,6 +557,3 @@ def delete_tag(
                 " and that category exists."
             )
     return {"Tag deleted": tag_deleted}
-
-
-

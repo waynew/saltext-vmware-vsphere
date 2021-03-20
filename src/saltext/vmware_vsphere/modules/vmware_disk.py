@@ -78,13 +78,13 @@ def list_disks(disk_ids=None, scsi_addresses=None, service_instance=None):
     # Default to getting all disks if no filtering is done
     get_all_disks = True if not (disk_ids or scsi_addresses) else False
     ret_list = []
-    scsi_address_to_lun = salt.utils.vmware.get_scsi_address_to_lun_map(
+    scsi_address_to_lun = saltext.vmware.utils.vmware.get_scsi_address_to_lun_map(
         host_ref, hostname=hostname
     )
     canonical_name_to_scsi_address = {
         lun.canonicalName: scsi_addr for scsi_addr, lun in scsi_address_to_lun.items()
     }
-    for d in salt.utils.vmware.get_disks(
+    for d in saltext.vmware.utils.vmware.get_disks(
         host_ref, disk_ids, scsi_addresses, get_all_disks
     ):
         ret_list.append(
@@ -132,7 +132,7 @@ def erase_disk_partitions(disk_id=None, scsi_address=None, service_instance=None
     host_ref = _get_proxy_target(service_instance)
     hostname = __proxy__["esxi.get_details"]()["esxi_host"]
     if not disk_id:
-        scsi_address_to_lun = salt.utils.vmware.get_scsi_address_to_lun_map(host_ref)
+        scsi_address_to_lun = saltext.vmware.utils.vmware.get_scsi_address_to_lun_map(host_ref)
         if scsi_address not in scsi_address_to_lun:
             raise VMwareObjectRetrievalError(
                 "Scsi lun with address '{}' was not found on host '{}'"
@@ -146,7 +146,7 @@ def erase_disk_partitions(disk_id=None, scsi_address=None, service_instance=None
     log.trace(
         "Erasing disk partitions on disk '{}' in host '{}'" "".format(disk_id, hostname)
     )
-    salt.utils.vmware.erase_disk_partitions(
+    saltext.vmware.utils.vmware.erase_disk_partitions(
         service_instance, host_ref, disk_id, hostname=hostname
     )
     log.info(
@@ -191,7 +191,7 @@ def list_disk_partitions(disk_id=None, scsi_address=None, service_instance=None)
     host_ref = _get_proxy_target(service_instance)
     hostname = __proxy__["esxi.get_details"]()["esxi_host"]
     if not disk_id:
-        scsi_address_to_lun = salt.utils.vmware.get_scsi_address_to_lun_map(host_ref)
+        scsi_address_to_lun = saltext.vmware.utils.vmware.get_scsi_address_to_lun_map(host_ref)
         if scsi_address not in scsi_address_to_lun:
             raise VMwareObjectRetrievalError(
                 "Scsi lun with address '{}' was not found on host '{}'"
@@ -205,7 +205,7 @@ def list_disk_partitions(disk_id=None, scsi_address=None, service_instance=None)
     log.trace(
         "Listing disk partitions on disk '{}' in host '{}'" "".format(disk_id, hostname)
     )
-    partition_info = salt.utils.vmware.get_disk_partition_info(host_ref, disk_id)
+    partition_info = saltext.vmware.utils.vmware.get_disk_partition_info(host_ref, disk_id)
     ret_list = []
     # NOTE: 1. The layout view has an extra 'None' partition for free space
     #       2. The orders in the layout/partition views are not the same
@@ -262,7 +262,7 @@ def list_diskgroups(cache_disk_ids=None, service_instance=None):
     log.trace("Listing diskgroups in '{}'".format(hostname))
     get_all_diskgroups = True if not cache_disk_ids else False
     ret_list = []
-    for dg in salt.utils.vmware.get_diskgroups(
+    for dg in saltext.vmware.utils.vmware.get_diskgroups(
         host_ref, cache_disk_ids, get_all_diskgroups
     ):
         ret_list.append(
@@ -322,7 +322,7 @@ def create_diskgroup(
     host_ref = _get_proxy_target(service_instance)
     hostname = __proxy__["esxi.get_details"]()["esxi_host"]
     if safety_checks:
-        diskgroups = salt.utils.vmware.get_diskgroups(host_ref, [cache_disk_id])
+        diskgroups = saltext.vmware.utils.vmware.get_diskgroups(host_ref, [cache_disk_id])
         if diskgroups:
             raise VMwareObjectExistsError(
                 "Diskgroup with cache disk id '{}' already exists ESXi "
@@ -330,7 +330,7 @@ def create_diskgroup(
             )
     disk_ids = capacity_disk_ids[:]
     disk_ids.insert(0, cache_disk_id)
-    disks = salt.utils.vmware.get_disks(host_ref, disk_ids=disk_ids)
+    disks = saltext.vmware.utils.vmware.get_disks(host_ref, disk_ids=disk_ids)
     for id in disk_ids:
         if not [d for d in disks if d.canonicalName == id]:
             raise VMwareObjectRetrievalError(
@@ -393,7 +393,7 @@ def add_capacity_to_diskgroup(
         raise ArgumentValueError(exc)
     host_ref = _get_proxy_target(service_instance)
     hostname = __proxy__["esxi.get_details"]()["esxi_host"]
-    disks = salt.utils.vmware.get_disks(host_ref, disk_ids=capacity_disk_ids)
+    disks = saltext.vmware.utils.vmware.get_disks(host_ref, disk_ids=capacity_disk_ids)
     if safety_checks:
         for id in capacity_disk_ids:
             if not [d for d in disks if d.canonicalName == id]:
@@ -401,7 +401,7 @@ def add_capacity_to_diskgroup(
                     "No disk with id '{}' was found in ESXi host '{}'"
                     "".format(id, hostname)
                 )
-    diskgroups = salt.utils.vmware.get_diskgroups(
+    diskgroups = saltext.vmware.utils.vmware.get_diskgroups(
         host_ref, cache_disk_ids=[cache_disk_id]
     )
     if not diskgroups:
@@ -471,7 +471,7 @@ def remove_capacity_from_diskgroup(
         raise ArgumentValueError(str(exc))
     host_ref = _get_proxy_target(service_instance)
     hostname = __proxy__["esxi.get_details"]()["esxi_host"]
-    disks = salt.utils.vmware.get_disks(host_ref, disk_ids=capacity_disk_ids)
+    disks = saltext.vmware.utils.vmware.get_disks(host_ref, disk_ids=capacity_disk_ids)
     if safety_checks:
         for id in capacity_disk_ids:
             if not [d for d in disks if d.canonicalName == id]:
@@ -479,7 +479,7 @@ def remove_capacity_from_diskgroup(
                     "No disk with id '{}' was found in ESXi host '{}'"
                     "".format(id, hostname)
                 )
-    diskgroups = salt.utils.vmware.get_diskgroups(
+    diskgroups = saltext.vmware.utils.vmware.get_diskgroups(
         host_ref, cache_disk_ids=[cache_disk_id]
     )
     if not diskgroups:
@@ -523,7 +523,7 @@ def remove_diskgroup(cache_disk_id, data_accessibility=True, service_instance=No
     log.trace("Validating diskgroup input")
     host_ref = _get_proxy_target(service_instance)
     hostname = __proxy__["esxi.get_details"]()["esxi_host"]
-    diskgroups = salt.utils.vmware.get_diskgroups(
+    diskgroups = saltext.vmware.utils.vmware.get_diskgroups(
         host_ref, cache_disk_ids=[cache_disk_id]
     )
     if not diskgroups:
@@ -557,7 +557,7 @@ def get_host_cache(service_instance=None):
     ret_dict = {}
     host_ref = _get_proxy_target(service_instance)
     hostname = __proxy__["esxi.get_details"]()["esxi_host"]
-    hci = salt.utils.vmware.get_host_cache(host_ref)
+    hci = saltext.vmware.utils.vmware.get_host_cache(host_ref)
     if not hci:
         log.debug("Host cache not configured on host '{}'".format(hostname))
         ret_dict["enabled"] = False
@@ -569,5 +569,3 @@ def get_host_cache(service_instance=None):
         "datastore": {"name": hci.key.name},
         "swap_size": "{}MiB".format(hci.swapSize),
     }
-
-

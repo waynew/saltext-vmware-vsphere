@@ -41,6 +41,36 @@ def __virtual__():
     return __virtualname__
 
 
+def _format_coredump_stdout(cmd_ret):
+    """
+    Helper function to format the stdout from the get_coredump_network_config function.
+
+    cmd_ret
+        The return dictionary that comes from a cmd.run_all call.
+    """
+    ret_dict = {}
+    for line in cmd_ret["stdout"].splitlines():
+        line = line.strip().lower()
+        if line.startswith("enabled:"):
+            enabled = line.split(":")
+            if "true" in enabled[1]:
+                ret_dict["enabled"] = True
+            else:
+                ret_dict["enabled"] = False
+                break
+        if line.startswith("host vnic:"):
+            host_vnic = line.split(":")
+            ret_dict["host_vnic"] = host_vnic[1].strip()
+        if line.startswith("network server ip:"):
+            ip = line.split(":")
+            ret_dict["ip"] = ip[1].strip()
+        if line.startswith("network server port:"):
+            ip_port = line.split(":")
+            ret_dict["port"] = ip_port[1].strip()
+
+    return ret_dict
+
+
 @depends(HAS_ESX_CLI)
 def get_coredump_network_config(
     host, username, password, protocol=None, port=None, esxi_hosts=None, credstore=None
@@ -96,7 +126,7 @@ def get_coredump_network_config(
             raise CommandExecutionError("'esxi_hosts' must be a list.")
 
         for esxi_host in esxi_hosts:
-            response = salt.utils.vmware.esxcli(
+            response = saltext.vmware.utils.vmware.esxcli(
                 host,
                 username,
                 password,
@@ -115,7 +145,7 @@ def get_coredump_network_config(
                 )
     else:
         # Handles a single host or a vCenter connection when no esxi_hosts are provided.
-        response = salt.utils.vmware.esxcli(
+        response = saltext.vmware.utils.vmware.esxcli(
             host,
             username,
             password,
@@ -200,7 +230,7 @@ def coredump_network_enable(
             raise CommandExecutionError("'esxi_hosts' must be a list.")
 
         for esxi_host in esxi_hosts:
-            response = salt.utils.vmware.esxcli(
+            response = saltext.vmware.utils.vmware.esxcli(
                 host,
                 username,
                 password,
@@ -217,7 +247,7 @@ def coredump_network_enable(
 
     else:
         # Handles a single host or a vCenter connection when no esxi_hosts are provided.
-        response = salt.utils.vmware.esxcli(
+        response = saltext.vmware.utils.vmware.esxcli(
             host,
             username,
             password,
@@ -309,7 +339,7 @@ def set_coredump_network_config(
             raise CommandExecutionError("'esxi_hosts' must be a list.")
 
         for esxi_host in esxi_hosts:
-            response = salt.utils.vmware.esxcli(
+            response = saltext.vmware.utils.vmware.esxcli(
                 host,
                 username,
                 password,
@@ -328,7 +358,7 @@ def set_coredump_network_config(
             ret.update({esxi_host: response})
     else:
         # Handles a single host or a vCenter connection when no esxi_hosts are provided.
-        response = salt.utils.vmware.esxcli(
+        response = saltext.vmware.utils.vmware.esxcli(
             host,
             username,
             password,
@@ -344,5 +374,3 @@ def set_coredump_network_config(
         ret.update({host: response})
 
     return ret
-
-

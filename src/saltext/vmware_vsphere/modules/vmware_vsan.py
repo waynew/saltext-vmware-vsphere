@@ -90,7 +90,7 @@ def vsan_add_disks(
         salt '*' vsphere.vsan_add_disks my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -123,7 +123,7 @@ def vsan_add_disks(
                 # If we have eligible, matching disks, add them to VSAN.
                 try:
                     task = vsan_system.AddDisks(eligible)
-                    salt.utils.vmware.wait_for_task(
+                    saltext.vmware.utils.vmware.wait_for_task(
                         task, host_name, "Adding disks to VSAN", sleep_seconds=3
                     )
                 except vim.fault.InsufficientDisks as err:
@@ -217,7 +217,7 @@ def vsan_disable(
         salt '*' vsphere.vsan_disable my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -248,7 +248,7 @@ def vsan_disable(
             try:
                 # Disable vsan on the host
                 task = vsan_system.UpdateVsan_Task(vsan_config)
-                salt.utils.vmware.wait_for_task(
+                saltext.vmware.utils.vmware.wait_for_task(
                     task, host_name, "Disabling VSAN", sleep_seconds=3
                 )
             except vmodl.fault.SystemError as err:
@@ -316,7 +316,7 @@ def vsan_enable(
         salt '*' vsphere.vsan_enable my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -347,7 +347,7 @@ def vsan_enable(
             try:
                 # Enable vsan on the host
                 task = vsan_system.UpdateVsan_Task(vsan_config)
-                salt.utils.vmware.wait_for_task(
+                saltext.vmware.utils.vmware.wait_for_task(
                     task, host_name, "Enabling VSAN", sleep_seconds=3
                 )
             except vmodl.fault.SystemError as err:
@@ -423,7 +423,7 @@ def get_vsan_enabled(
         salt '*' vsphere.get_vsan_enabled my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -502,7 +502,7 @@ def get_vsan_eligible_disks(
         salt '*' vsphere.get_vsan_eligible_disks my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,

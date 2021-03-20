@@ -1,3 +1,46 @@
+import logging
+import sys
+
+import saltext.vmware.utils.vmware
+
+from salt.utils.decorators import depends, ignores_kwargs
+
+log = logging.getLogger(__name__)
+
+try:
+    # pylint: disable=no-name-in-module
+    from pyVmomi import (
+        vim,
+        vmodl,
+        pbm,
+        VmomiSupport,
+    )
+
+    # pylint: enable=no-name-in-module
+
+    # We check the supported vim versions to infer the pyVmomi version
+    if (
+        "vim25/6.0" in VmomiSupport.versionMap
+        and sys.version_info > (2, 7)
+        and sys.version_info < (2, 7, 9)
+    ):
+
+        log.debug(
+            "pyVmomi not loaded: Incompatible versions " "of Python. See Issue #29537."
+        )
+        raise ImportError()
+    HAS_PYVMOMI = True
+except ImportError:
+    HAS_PYVMOMI = False
+
+
+__virtualname__ = "vmware_vmotion"
+
+
+def __virtual__():
+    return __virtualname__
+
+
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
 def get_vmotion_enabled(
@@ -53,7 +96,7 @@ def get_vmotion_enabled(
         salt '*' vsphere.get_vmotion_enabled my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -122,7 +165,7 @@ def vmotion_disable(
         salt '*' vsphere.vmotion_disable my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -209,7 +252,7 @@ def vmotion_enable(
         salt '*' vsphere.vmotion_enable my.vcenter.location root bad-password \
         host_names='[esxi-1.host.com, esxi-2.host.com]'
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -235,5 +278,3 @@ def vmotion_enable(
         ret.update({host_name: {"VMotion Enabled": True}})
 
     return ret
-
-

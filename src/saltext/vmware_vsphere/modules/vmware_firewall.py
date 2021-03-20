@@ -34,11 +34,30 @@ except ImportError:
     HAS_PYVMOMI = False
 
 
-__virtualname__ = "vmware_datacenter"
+__virtualname__ = "vmware_firewall"
 
 
 def __virtual__():
     return __virtualname__
+
+
+def _format_firewall_stdout(cmd_ret):
+    """
+    Helper function to format the stdout from the get_firewall_status function.
+
+    cmd_ret
+        The return dictionary that comes from a cmd.run_all call.
+    """
+    ret_dict = {"success": True, "rulesets": {}}
+    for line in cmd_ret["stdout"].splitlines():
+        if line.startswith("Name"):
+            continue
+        if line.startswith("---"):
+            continue
+        ruleset_status = line.split()
+        ret_dict["rulesets"][ruleset_status[0]] = bool(ruleset_status[1])
+
+    return ret_dict
 
 
 @depends(HAS_ESX_CLI)
@@ -96,7 +115,7 @@ def get_firewall_status(
             raise CommandExecutionError("'esxi_hosts' must be a list.")
 
         for esxi_host in esxi_hosts:
-            response = salt.utils.vmware.esxcli(
+            response = saltext.vmware.utils.vmware.esxcli(
                 host,
                 username,
                 password,
@@ -121,7 +140,7 @@ def get_firewall_status(
                 ret.update({esxi_host: _format_firewall_stdout(response)})
     else:
         # Handles a single host or a vCenter connection when no esxi_hosts are provided.
-        response = salt.utils.vmware.esxcli(
+        response = saltext.vmware.utils.vmware.esxcli(
             host,
             username,
             password,
@@ -215,7 +234,7 @@ def enable_firewall_ruleset(
             raise CommandExecutionError("'esxi_hosts' must be a list.")
 
         for esxi_host in esxi_hosts:
-            response = salt.utils.vmware.esxcli(
+            response = saltext.vmware.utils.vmware.esxcli(
                 host,
                 username,
                 password,
@@ -228,7 +247,7 @@ def enable_firewall_ruleset(
             ret.update({esxi_host: response})
     else:
         # Handles a single host or a vCenter connection when no esxi_hosts are provided.
-        response = salt.utils.vmware.esxcli(
+        response = saltext.vmware.utils.vmware.esxcli(
             host,
             username,
             password,

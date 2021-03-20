@@ -74,7 +74,7 @@ def list_clusters(host, username, password, protocol=None, port=None, verify_ssl
         salt '*' vsphere.list_clusters 1.2.3.4 root bad-password
 
     """
-    service_instance = salt.utils.vmware.get_service_instance(
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(
         host=host,
         username=username,
         password=password,
@@ -82,7 +82,7 @@ def list_clusters(host, username, password, protocol=None, port=None, verify_ssl
         port=port,
         verify_ssl=verify_ssl,
     )
-    return salt.utils.vmware.list_clusters(service_instance)
+    return saltext.vmware.utils.vmware.list_clusters(service_instance)
 
 
 @depends(HAS_PYVMOMI)
@@ -122,7 +122,7 @@ def list_cluster(datacenter=None, cluster=None, service_instance=None):
         dc_ref = _get_proxy_target(service_instance)
         if not cluster:
             raise ArgumentValueError("'cluster' needs to be specified")
-        cluster_ref = salt.utils.vmware.get_cluster(dc_ref, cluster)
+        cluster_ref = saltext.vmware.utils.vmware.get_cluster(dc_ref, cluster)
     elif proxy_type == "esxcluster":
         cluster_ref = _get_proxy_target(service_instance)
         cluster = __salt__["esxcluster.get_details"]()["cluster"]
@@ -183,7 +183,7 @@ def create_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
             raise ArgumentValueError("'cluster' needs to be specified")
     elif proxy_type == "esxcluster":
         datacenter = __salt__["esxcluster.get_details"]()["datacenter"]
-        dc_ref = salt.utils.vmware.get_datacenter(service_instance, datacenter)
+        dc_ref = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
         cluster = __salt__["esxcluster.get_details"]()["cluster"]
 
     if cluster_dict.get("vsan") and not salt.utils.vsan.vsan_supported(
@@ -199,7 +199,7 @@ def create_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
     if cluster_dict.get("vsan"):
         # XXX The correct way of retrieving the VSAN data (on the if branch)
         #  is not supported before 60u2 vcenter
-        vcenter_info = salt.utils.vmware.get_service_info(si)
+        vcenter_info = saltext.vmware.utils.vmware.get_service_info(si)
         if (
             float(vcenter_info.apiVersion) >= 6.0 and int(vcenter_info.build) >= 3634794
         ):  # 60u2
@@ -215,16 +215,16 @@ def create_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
     # If VSAN is 6.1 the configuration of VSAN happens when configuring the
     # cluster via the regular endpoint
     _apply_cluster_dict(cluster_spec, cluster_dict, vsan_spec, vsan_61)
-    salt.utils.vmware.create_cluster(dc_ref, cluster, cluster_spec)
+    saltext.vmware.utils.vmware.create_cluster(dc_ref, cluster, cluster_spec)
     if not vsan_61:
         # Only available after VSAN 61
         if vsan_spec:
-            cluster_ref = salt.utils.vmware.get_cluster(dc_ref, cluster)
+            cluster_ref = saltext.vmware.utils.vmware.get_cluster(dc_ref, cluster)
             salt.utils.vsan.reconfigure_cluster_vsan(cluster_ref, vsan_spec)
         if enable_ha:
             # Set HA after VSAN has been configured
             _apply_cluster_dict(cluster_spec, {"ha": ha_config})
-            salt.utils.vmware.update_cluster(cluster_ref, cluster_spec)
+            saltext.vmware.utils.vmware.update_cluster(cluster_ref, cluster_spec)
             # Set HA back on the object
             cluster_dict["ha"] = ha_config
     return {"create_cluster": True}
@@ -279,7 +279,7 @@ def update_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
             raise ArgumentValueError("'cluster' needs to be specified")
     elif proxy_type == "esxcluster":
         datacenter = __salt__["esxcluster.get_details"]()["datacenter"]
-        dc_ref = salt.utils.vmware.get_datacenter(service_instance, datacenter)
+        dc_ref = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
         cluster = __salt__["esxcluster.get_details"]()["cluster"]
 
     if cluster_dict.get("vsan") and not salt.utils.vsan.vsan_supported(
@@ -288,9 +288,9 @@ def update_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
 
         raise VMwareApiError("VSAN operations are not supported")
 
-    cluster_ref = salt.utils.vmware.get_cluster(dc_ref, cluster)
+    cluster_ref = saltext.vmware.utils.vmware.get_cluster(dc_ref, cluster)
     cluster_spec = vim.ClusterConfigSpecEx()
-    props = salt.utils.vmware.get_properties_of_managed_object(
+    props = saltext.vmware.utils.vmware.get_properties_of_managed_object(
         cluster_ref, properties=["configurationEx"]
     )
     # Copy elements we want to update to spec
@@ -303,7 +303,7 @@ def update_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
     if cluster_dict.get("vsan"):
         # XXX The correct way of retrieving the VSAN data (on the if branch)
         #  is not supported before 60u2 vcenter
-        vcenter_info = salt.utils.vmware.get_service_info(service_instance)
+        vcenter_info = saltext.vmware.utils.vmware.get_service_info(service_instance)
         if (
             float(vcenter_info.apiVersion) >= 6.0 and int(vcenter_info.build) >= 3634794
         ):  # 60u2
@@ -330,7 +330,7 @@ def update_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
         # We need to retrieve again the properties and reapply them
         # As the VSAN configuration has changed
         cluster_spec = vim.ClusterConfigSpecEx()
-        props = salt.utils.vmware.get_properties_of_managed_object(
+        props = saltext.vmware.utils.vmware.get_properties_of_managed_object(
             cluster_ref, properties=["configurationEx"]
         )
         # Copy elements we want to update to spec
@@ -341,5 +341,5 @@ def update_cluster(cluster_dict, datacenter=None, cluster=None, service_instance
         # We only need to configure the cluster_spec, as if it were a vsan_61
         # cluster
         _apply_cluster_dict(cluster_spec, cluster_dict)
-    salt.utils.vmware.update_cluster(cluster_ref, cluster_spec)
+    saltext.vmware.utils.vmware.update_cluster(cluster_ref, cluster_spec)
     return {"update_cluster": True}

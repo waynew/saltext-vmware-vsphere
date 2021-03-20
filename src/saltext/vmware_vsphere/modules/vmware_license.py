@@ -1,3 +1,46 @@
+import logging
+import sys
+
+import saltext.vmware.utils.vmware
+
+from salt.utils.decorators import depends, ignores_kwargs
+
+log = logging.getLogger(__name__)
+
+try:
+    # pylint: disable=no-name-in-module
+    from pyVmomi import (
+        vim,
+        vmodl,
+        pbm,
+        VmomiSupport,
+    )
+
+    # pylint: enable=no-name-in-module
+
+    # We check the supported vim versions to infer the pyVmomi version
+    if (
+        "vim25/6.0" in VmomiSupport.versionMap
+        and sys.version_info > (2, 7)
+        and sys.version_info < (2, 7, 9)
+    ):
+
+        log.debug(
+            "pyVmomi not loaded: Incompatible versions " "of Python. See Issue #29537."
+        )
+        raise ImportError()
+    HAS_PYVMOMI = True
+except ImportError:
+    HAS_PYVMOMI = False
+
+
+__virtualname__ = "vmware_licenses"
+
+
+def __virtual__():
+    return __virtualname__
+
+
 @depends(HAS_PYVMOMI)
 @_supports_proxies("esxcluster", "esxdatacenter")
 @_gets_service_instance_via_proxy
@@ -14,7 +57,7 @@ def list_licenses(service_instance=None):
         salt '*' vsphere.list_licenses
     """
     log.trace("Retrieving all licenses")
-    licenses = salt.utils.vmware.get_licenses(service_instance)
+    licenses = saltext.vmware.utils.vmware.get_licenses(service_instance)
     ret_dict = [
         {
             "key": l.licenseKey,
@@ -55,7 +98,7 @@ def add_license(key, description, safety_checks=True, service_instance=None):
         salt '*' vsphere.add_license key=<license_key> desc='License desc'
     """
     log.trace("Adding license '{}'".format(key))
-    salt.utils.vmware.add_license(service_instance, key, description)
+    saltext.vmware.utils.vmware.add_license(service_instance, key, description)
     return True
 
 
@@ -92,7 +135,7 @@ def list_assigned_licenses(
     log.trace("Listing assigned licenses of entity {}" "".format(entity))
     _validate_entity(entity)
 
-    assigned_licenses = salt.utils.vmware.get_assigned_licenses(
+    assigned_licenses = saltext.vmware.utils.vmware.get_assigned_licenses(
         service_instance,
         entity_ref=_get_entity(service_instance, entity),
         entity_name=entity_display_name,
@@ -155,12 +198,12 @@ def assign_license(
     log.trace("Assigning license {} to entity {}" "".format(license_key, entity))
     _validate_entity(entity)
     if safety_checks:
-        licenses = salt.utils.vmware.get_licenses(service_instance)
+        licenses = saltext.vmware.utils.vmware.get_licenses(service_instance)
         if not [l for l in licenses if l.licenseKey == license_key]:
             raise VMwareObjectRetrievalError(
                 "License '{}' wasn't found" "".format(license_name)
             )
-    salt.utils.vmware.assign_license(
+    saltext.vmware.utils.vmware.assign_license(
         service_instance,
         license_key,
         license_name,

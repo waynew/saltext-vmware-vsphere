@@ -78,6 +78,6 @@ def create_datacenter(datacenter_name):
     else:
         service_instance = _get_service_instance()
 
-    salt.utils.vmware.create_datacenter(service_instance, datacenter_name)
+    saltext.vmware.utils.vmware.create_datacenter(service_instance, datacenter_name)
     return {"create_datacenter": True}
 

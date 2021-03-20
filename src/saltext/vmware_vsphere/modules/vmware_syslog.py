@@ -1,3 +1,68 @@
+import logging
+import sys
+
+import saltext.vmware.utils.vmware
+
+from salt.utils.decorators import depends, ignores_kwargs
+
+log = logging.getLogger(__name__)
+
+try:
+    # pylint: disable=no-name-in-module
+    from pyVmomi import (
+        vim,
+        vmodl,
+        pbm,
+        VmomiSupport,
+    )
+
+    # pylint: enable=no-name-in-module
+
+    # We check the supported vim versions to infer the pyVmomi version
+    if (
+        "vim25/6.0" in VmomiSupport.versionMap
+        and sys.version_info > (2, 7)
+        and sys.version_info < (2, 7, 9)
+    ):
+
+        log.debug(
+            "pyVmomi not loaded: Incompatible versions " "of Python. See Issue #29537."
+        )
+        raise ImportError()
+    HAS_PYVMOMI = True
+except ImportError:
+    HAS_PYVMOMI = False
+
+
+__virtualname__ = "vmware_syslog"
+
+
+def __virtual__():
+    return __virtualname__
+
+
+def _format_syslog_config(cmd_ret):
+    """
+    Helper function to format the stdout from the get_syslog_config function.
+
+    cmd_ret
+        The return dictionary that comes from a cmd.run_all call.
+    """
+    ret_dict = {"success": cmd_ret["retcode"] == 0}
+
+    if cmd_ret["retcode"] != 0:
+        ret_dict["message"] = cmd_ret["stdout"]
+    else:
+        for line in cmd_ret["stdout"].splitlines():
+            line = line.strip()
+            cfgvars = line.split(": ")
+            key = cfgvars[0].strip()
+            value = cfgvars[1].strip()
+            ret_dict[key] = value
+
+    return ret_dict
+
+
 @depends(HAS_ESX_CLI)
 def syslog_service_reload(
     host, username, password, protocol=None, port=None, esxi_hosts=None, credstore=None

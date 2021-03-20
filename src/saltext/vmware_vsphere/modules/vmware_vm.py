@@ -353,11 +353,11 @@ def create_vm(
     """
     # If datacenter is specified, set the container reference to start search
     # from it instead
-    container_object = salt.utils.vmware.get_datacenter(service_instance, datacenter)
-    (resourcepool_object, placement_object) = salt.utils.vmware.get_placement(
+    container_object = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
+    (resourcepool_object, placement_object) = saltext.vmware.utils.vmware.get_placement(
         service_instance, datacenter, placement=placement
     )
-    folder_object = salt.utils.vmware.get_folder(
+    folder_object = saltext.vmware.utils.vmware.get_folder(
         service_instance, datacenter, placement
     )
     # Create the config specs
@@ -368,7 +368,7 @@ def create_vm(
 
     # For VSAN disks we need to specify a different vm path name, the vm file
     # full path cannot be used
-    datastore_object = salt.utils.vmware.get_datastores(
+    datastore_object = saltext.vmware.utils.vmware.get_datastores(
         service_instance, placement_object, datastore_names=[datastore]
     )[0]
     if not datastore_object:
@@ -376,7 +376,7 @@ def create_vm(
             "Specified datastore: '{}' does not exist.".format(datastore)
         )
     try:
-        ds_summary = salt.utils.vmware.get_properties_of_managed_object(
+        ds_summary = saltext.vmware.utils.vmware.get_properties_of_managed_object(
             datastore_object, "summary.type"
         )
         if "summary.type" in ds_summary and ds_summary["summary.type"] == "vsan":
@@ -434,7 +434,7 @@ def create_vm(
         config_spec.deviceChange.extend(cd_drive_specs)
     if advanced_configs:
         _apply_advanced_config(config_spec, advanced_configs)
-    salt.utils.vmware.create_vm(
+    saltext.vmware.utils.vmware.create_vm(
         vm_name, config_spec, folder_object, resourcepool_object, placement_object
     )
 
@@ -530,8 +530,8 @@ def update_vm(
         current_config,
     )
     config_spec = vim.vm.ConfigSpec()
-    datacenter_ref = salt.utils.vmware.get_datacenter(service_instance, datacenter)
-    vm_ref = salt.utils.vmware.get_mor_by_property(
+    datacenter_ref = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
+    vm_ref = saltext.vmware.utils.vmware.get_mor_by_property(
         service_instance,
         vim.VirtualMachine,
         vm_name,
@@ -637,7 +637,7 @@ def update_vm(
         config_spec.deviceChange.extend(cd_changes)
 
     if difference_keys:
-        salt.utils.vmware.update_vm(vm_ref, config_spec)
+        saltext.vmware.utils.vmware.update_vm(vm_ref, config_spec)
     changes = {}
     for key, properties in diffs.items():
         # We can't display object, although we will need them for delete
@@ -682,12 +682,12 @@ def register_vm(name, datacenter, placement, vmx_path, service_instance=None):
         "datacenter={}, placement={}, "
         "vmx_path={}".format(datacenter, placement, vmx_path)
     )
-    datacenter_object = salt.utils.vmware.get_datacenter(service_instance, datacenter)
+    datacenter_object = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
     if "cluster" in placement:
-        cluster_obj = salt.utils.vmware.get_cluster(
+        cluster_obj = saltext.vmware.utils.vmware.get_cluster(
             datacenter_object, placement["cluster"]
         )
-        cluster_props = salt.utils.vmware.get_properties_of_managed_object(
+        cluster_props = saltext.vmware.utils.vmware.get_properties_of_managed_object(
             cluster_obj, properties=["resourcePool"]
         )
         if "resourcePool" in cluster_props:
@@ -696,9 +696,9 @@ def register_vm(name, datacenter, placement, vmx_path, service_instance=None):
             raise salt.exceptions.VMwareObjectRetrievalError(
                 "The cluster's resource pool object could not be retrieved."
             )
-        salt.utils.vmware.register_vm(datacenter_object, name, vmx_path, resourcepool)
+        saltext.vmware.utils.vmware.register_vm(datacenter_object, name, vmx_path, resourcepool)
     elif "host" in placement:
-        hosts = salt.utils.vmware.get_hosts(
+        hosts = saltext.vmware.utils.vmware.get_hosts(
             service_instance, datacenter_name=datacenter, host_names=[placement["host"]]
         )
         if not hosts:
@@ -706,12 +706,12 @@ def register_vm(name, datacenter, placement, vmx_path, service_instance=None):
                 "ESXi host named '{}' wasn't found.".format(placement["host"])
             )
         host_obj = hosts[0]
-        host_props = salt.utils.vmware.get_properties_of_managed_object(
+        host_props = saltext.vmware.utils.vmware.get_properties_of_managed_object(
             host_obj, properties=["parent"]
         )
         if "parent" in host_props:
             host_parent = host_props["parent"]
-            parent = salt.utils.vmware.get_properties_of_managed_object(
+            parent = saltext.vmware.utils.vmware.get_properties_of_managed_object(
                 host_parent, properties=["parent"]
             )
             if "parent" in parent:
@@ -724,7 +724,7 @@ def register_vm(name, datacenter, placement, vmx_path, service_instance=None):
             raise salt.exceptions.VMwareObjectRetrievalError(
                 "The host's parent object could not be retrieved."
             )
-        salt.utils.vmware.register_vm(
+        saltext.vmware.utils.vmware.register_vm(
             datacenter_object, name, vmx_path, resourcepool, host_object=host_obj
         )
     result = {
@@ -752,17 +752,17 @@ def _remove_vm(name, datacenter, service_instance, placement=None, power_off=Non
     """
     results = {}
     if placement:
-        (resourcepool_object, placement_object) = salt.utils.vmware.get_placement(
+        (resourcepool_object, placement_object) = saltext.vmware.utils.vmware.get_placement(
             service_instance, datacenter, placement
         )
     else:
-        placement_object = salt.utils.vmware.get_datacenter(
+        placement_object = saltext.vmware.utils.vmware.get_datacenter(
             service_instance, datacenter
         )
     if power_off:
         power_off_vm(name, datacenter, service_instance)
         results["powered_off"] = True
-    vm_ref = salt.utils.vmware.get_mor_by_property(
+    vm_ref = saltext.vmware.utils.vmware.get_mor_by_property(
         service_instance,
         vim.VirtualMachine,
         name,
@@ -816,7 +816,7 @@ def delete_vm(name, datacenter, placement=None, power_off=False, service_instanc
         placement=placement,
         power_off=power_off,
     )
-    salt.utils.vmware.delete_vm(vm_ref)
+    saltext.vmware.utils.vmware.delete_vm(vm_ref)
     results["deleted_vm"] = True
     return results
 
@@ -862,7 +862,7 @@ def unregister_vm(
         placement=placement,
         power_off=power_off,
     )
-    salt.utils.vmware.unregister_vm(vm_ref)
+    saltext.vmware.utils.vmware.unregister_vm(vm_ref)
     results["unregistered_vm"] = True
     return results
 
@@ -899,7 +899,7 @@ def get_vm(
         Service instance (vim.ServiceInstance) of the vCenter.
         Default is None.
     """
-    virtual_machine = salt.utils.vmware.get_vm_by_property(
+    virtual_machine = saltext.vmware.utils.vmware.get_vm_by_property(
         service_instance,
         name,
         datacenter=datacenter,
@@ -934,13 +934,13 @@ def get_vm_config_file(name, datacenter, placement, datastore, service_instance=
     browser_spec = vim.host.DatastoreBrowser.SearchSpec()
     directory = name
     browser_spec.query = [vim.host.DatastoreBrowser.VmConfigQuery()]
-    datacenter_object = salt.utils.vmware.get_datacenter(service_instance, datacenter)
+    datacenter_object = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
     if "cluster" in placement:
-        container_object = salt.utils.vmware.get_cluster(
+        container_object = saltext.vmware.utils.vmware.get_cluster(
             datacenter_object, placement["cluster"]
         )
     else:
-        container_objects = salt.utils.vmware.get_hosts(
+        container_objects = saltext.vmware.utils.vmware.get_hosts(
             service_instance, datacenter_name=datacenter, host_names=[placement["host"]]
         )
         if not container_objects:
@@ -950,7 +950,7 @@ def get_vm_config_file(name, datacenter, placement, datastore, service_instance=
         container_object = container_objects[0]
 
     # list of vim.host.DatastoreBrowser.SearchResults objects
-    files = salt.utils.vmware.get_datastore_files(
+    files = saltext.vmware.utils.vmware.get_datastore_files(
         service_instance, directory, [datastore], container_object, browser_spec
     )
     if files and len(files[0].file) > 1:
@@ -1000,10 +1000,10 @@ def get_vm_config(name, datacenter=None, objects=True, service_instance=None):
         "config.extraConfig",
         "name",
     ]
-    virtual_machine = salt.utils.vmware.get_vm_by_property(
+    virtual_machine = saltext.vmware.utils.vmware.get_vm_by_property(
         service_instance, name, vm_properties=properties, datacenter=datacenter
     )
-    parent_ref = salt.utils.vmware.get_datacenter(
+    parent_ref = saltext.vmware.utils.vmware.get_datacenter(
         service_instance=service_instance, datacenter_name=datacenter
     )
     current_config = {"name": name}
@@ -1074,7 +1074,7 @@ def get_vm_config(name, datacenter=None, objects=True, service_instance=None):
             )
             disk["controller"] = controller.deviceInfo.label
             disk["address"] = str(controller.busNumber) + ":" + str(device.unitNumber)
-            disk["datastore"] = salt.utils.vmware.get_managed_object_name(
+            disk["datastore"] = saltext.vmware.utils.vmware.get_managed_object_name(
                 device.backing.datastore
             )
             disk["thin_provision"] = device.backing.thinProvisioned
@@ -1091,7 +1091,7 @@ def get_vm_config(name, datacenter=None, objects=True, service_instance=None):
             interface["adapter"] = device.deviceInfo.label
             interface[
                 "adapter_type"
-            ] = salt.utils.vmware.get_network_adapter_object_type(device)
+            ] = saltext.vmware.utils.vmware.get_network_adapter_object_type(device)
             interface["connectable"] = {
                 "allow_guest_control": device.connectable.allowGuestControl,
                 "connected": device.connectable.connected,
@@ -1104,7 +1104,7 @@ def get_vm_config(name, datacenter=None, objects=True, service_instance=None):
             ):
                 interface["switch_type"] = "distributed"
                 pg_key = device.backing.port.portgroupKey
-                network_ref = salt.utils.vmware.get_mor_by_property(
+                network_ref = saltext.vmware.utils.vmware.get_mor_by_property(
                     service_instance,
                     vim.DistributedVirtualPortgroup,
                     pg_key,
@@ -1116,7 +1116,7 @@ def get_vm_config(name, datacenter=None, objects=True, service_instance=None):
             ):
                 interface["switch_type"] = "standard"
                 network_ref = device.backing.network
-            interface["name"] = salt.utils.vmware.get_managed_object_name(network_ref)
+            interface["name"] = saltext.vmware.utils.vmware.get_managed_object_name(network_ref)
             if objects:
                 interface["key"] = device.key
                 interface["object"] = device
