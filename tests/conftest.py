@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from saltext.vmware_vsphere import PACKAGE_ROOT
+from saltext.vmware import PACKAGE_ROOT
 from saltfactories.utils import random_string
 
 
