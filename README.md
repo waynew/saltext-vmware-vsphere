@@ -1,2 +1,2 @@
-# vmware_vsphere
+# vmware
 VMware Extension Module

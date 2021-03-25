@@ -1,11 +1,11 @@
-Welcome to vmware_vsphere Documentation!
+Welcome to vmware Documentation!
 =================================
 
 .. toctree::
   :maxdepth: 2
   :caption: Contents:
 
-  ref/saltext.vmware_vsphere.rst
+  ref/saltext.vmware.rst
   ref/modules.rst
 
 Indices and tables
