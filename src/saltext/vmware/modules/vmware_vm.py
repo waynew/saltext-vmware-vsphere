@@ -1,19 +1,211 @@
+# pylint: disable=C0302
+"""
+Manage VMware vCenter servers and ESXi hosts.
+
+.. versionadded:: 2015.8.4
+
+:codeauthor: Alexandru Bleotu <alexandru.bleotu@morganstaley.com>
+
+Dependencies
+============
+
+- pyVmomi Python Module
+- ESXCLI
+
+pyVmomi
+-------
+
+PyVmomi can be installed via pip:
+
+.. code-block:: bash
+
+    pip install pyVmomi
+
+.. note::
+
+    Version 6.0 of pyVmomi has some problems with SSL error handling on certain
+    versions of Python. If using version 6.0 of pyVmomi, Python 2.7.9,
+    or newer must be present. This is due to an upstream dependency
+    in pyVmomi 6.0 that is not supported in Python versions 2.7 to 2.7.8. If the
+    version of Python is not in the supported range, you will need to install an
+    earlier version of pyVmomi. See `Issue #29537`_ for more information.
+
+.. _Issue #29537: https://github.com/saltstack/salt/issues/29537
+
+Based on the note above, to install an earlier version of pyVmomi than the
+version currently listed in PyPi, run the following:
+
+.. code-block:: bash
+
+    pip install pyVmomi==5.5.0.2014.1.1
+
+The 5.5.0.2014.1.1 is a known stable version that this original vSphere Execution
+Module was developed against.
+
+vSphere Automation SDK
+----------------------
+
+vSphere Automation SDK can be installed via pip:
+
+.. code-block:: bash
+
+    pip install --upgrade pip setuptools
+    pip install --upgrade git+https://github.com/vmware/vsphere-automation-sdk-python.git
+
+.. note::
+
+    The SDK also requires OpenSSL 1.0.1+ if you want to connect to vSphere 6.5+ in order to support
+    TLS1.1 & 1.2.
+
+    In order to use the tagging functions in this module, vSphere Automation SDK is necessary to
+    install.
+
+The module is currently in version 1.0.3
+(as of 8/26/2019)
+
+ESXCLI
+------
+
+Currently, about a third of the functions used in the vSphere Execution Module require
+the ESXCLI package be installed on the machine running the Proxy Minion process.
+
+The ESXCLI package is also referred to as the VMware vSphere CLI, or vCLI. VMware
+provides vCLI package installation instructions for `vSphere 5.5`_ and
+`vSphere 6.0`_.
+
+.. _vSphere 5.5: http://pubs.vmware.com/vsphere-55/index.jsp#com.vmware.vcli.getstart.doc/cli_install.4.2.html
+.. _vSphere 6.0: http://pubs.vmware.com/vsphere-60/index.jsp#com.vmware.vcli.getstart.doc/cli_install.4.2.html
+
+Once all of the required dependencies are in place and the vCLI package is
+installed, you can check to see if you can connect to your ESXi host or vCenter
+server by running the following command:
+
+.. code-block:: bash
+
+    esxcli -s <host-location> -u <username> -p <password> system syslog config get
+
+If the connection was successful, ESXCLI was successfully installed on your system.
+You should see output related to the ESXi host's syslog configuration.
+
+.. note::
+
+    Be aware that some functionality in this execution module may depend on the
+    type of license attached to a vCenter Server or ESXi host(s).
+
+    For example, certain services are only available to manipulate service state
+    or policies with a VMware vSphere Enterprise or Enterprise Plus license, while
+    others are available with a Standard license. The ``ntpd`` service is restricted
+    to an Enterprise Plus license, while ``ssh`` is available via the Standard
+    license.
+
+    Please see the `vSphere Comparison`_ page for more information.
+
+.. _vSphere Comparison: https://www.vmware.com/products/vsphere/compare
+
+
+About
+=====
+
+This execution module was designed to be able to handle connections both to a
+vCenter Server, as well as to an ESXi host. It utilizes the pyVmomi Python
+library and the ESXCLI package to run remote execution functions against either
+the defined vCenter server or the ESXi host.
+
+Whether or not the function runs against a vCenter Server or an ESXi host depends
+entirely upon the arguments passed into the function. Each function requires a
+``host`` location, ``username``, and ``password``. If the credentials provided
+apply to a vCenter Server, then the function will be run against the vCenter
+Server. For example, when listing hosts using vCenter credentials, you'll get a
+list of hosts associated with that vCenter Server:
+
+.. code-block:: bash
+
+    # salt my-minion vsphere.list_hosts <vcenter-ip> <vcenter-user> <vcenter-password>
+    my-minion:
+    - esxi-1.example.com
+    - esxi-2.example.com
+
+However, some functions should be used against ESXi hosts, not vCenter Servers.
+Functionality such as getting a host's coredump network configuration should be
+performed against a host and not a vCenter server. If the authentication
+information you're using is against a vCenter server and not an ESXi host, you
+can provide the host name that is associated with the vCenter server in the
+command, as a list, using the ``host_names`` or ``esxi_host`` kwarg. For
+example:
+
+.. code-block:: bash
+
+    # salt my-minion vsphere.get_coredump_network_config <vcenter-ip> <vcenter-user> \
+        <vcenter-password> esxi_hosts='[esxi-1.example.com, esxi-2.example.com]'
+    my-minion:
+    ----------
+        esxi-1.example.com:
+            ----------
+            Coredump Config:
+                ----------
+                enabled:
+                    False
+        esxi-2.example.com:
+            ----------
+            Coredump Config:
+                ----------
+                enabled:
+                    True
+                host_vnic:
+                    vmk0
+                ip:
+                    coredump-location.example.com
+                port:
+                    6500
+
+You can also use these functions against an ESXi host directly by establishing a
+connection to an ESXi host using the host's location, username, and password. If ESXi
+connection credentials are used instead of vCenter credentials, the ``host_names`` and
+``esxi_hosts`` arguments are not needed.
+
+.. code-block:: bash
+
+    # salt my-minion vsphere.get_coredump_network_config esxi-1.example.com root <host-password>
+    local:
+    ----------
+        10.4.28.150:
+            ----------
+            Coredump Config:
+                ----------
+                enabled:
+                    True
+                host_vnic:
+                    vmk0
+                ip:
+                    coredump-location.example.com
+                port:
+                    6500
+"""
 import logging
 import sys
 
 import salt.utils.platform
 import saltext.vmware.utils.vmware
-
-from salt.utils.decorators import depends, ignores_kwargs
+from salt.exceptions import InvalidConfigError
+from salt.utils.decorators import depends
+from salt.utils.dictdiffer import recursive_diff
+from salt.utils.listdiffer import list_diff
+from saltext.vmware.config.schemas.esxvm import ESXVirtualMachineDeleteSchema
+from saltext.vmware.config.schemas.esxvm import ESXVirtualMachineUnregisterSchema
 
 log = logging.getLogger(__name__)
+
+try:
+    import jsonschema
+
+    HAS_JSONSCHEMA = True
+except ImportError:
+    HAS_JSONSCHEMA = False
 
 try:
     # pylint: disable=no-name-in-module
     from pyVmomi import (
         vim,
-        vmodl,
-        pbm,
         VmomiSupport,
     )
 
@@ -26,9 +218,7 @@ try:
         and sys.version_info < (2, 7, 9)
     ):
 
-        log.debug(
-            "pyVmomi not loaded: Incompatible versions " "of Python. See Issue #29537."
-        )
+        log.debug("pyVmomi not loaded: Incompatible versions " "of Python. See Issue #29537.")
         raise ImportError()
     HAS_PYVMOMI = True
 except ImportError:
@@ -55,9 +245,7 @@ def _get_scsi_controller_key(bus_number, scsi_ctrls):
     # list of new/old VirtualSCSIController objects, both new and old objects
     # should contain a key attribute key should be a negative integer in case
     # of a new object
-    keys = [
-        ctrl.key for ctrl in scsi_ctrls if scsi_ctrls and ctrl.busNumber == bus_number
-    ]
+    keys = [ctrl.key for ctrl in scsi_ctrls if scsi_ctrls and ctrl.busNumber == bus_number]
     if not keys:
         raise salt.exceptions.VMwareVmCreationError(
             "SCSI controller number {} doesn't exist".format(bus_number)
@@ -79,25 +267,18 @@ def _create_adapter_type(network_adapter, adapter_type, network_adapter_label=""
     network_adapter_label
         string, network adapter name
     """
-    log.trace(
-        "Configuring virtual machine network "
-        "adapter adapter_type={}".format(adapter_type)
-    )
+    log.trace("Configuring virtual machine network " "adapter adapter_type=%s", adapter_type)
     if adapter_type in ["vmxnet", "vmxnet2", "vmxnet3", "e1000", "e1000e"]:
-        edited_network_adapter = salt.utils.vmware.get_network_adapter_type(
-            adapter_type
-        )
+        edited_network_adapter = salt.utils.vmware.get_network_adapter_type(adapter_type)
         if isinstance(network_adapter, type(edited_network_adapter)):
             edited_network_adapter = network_adapter
         else:
             if network_adapter:
                 log.trace(
-                    "Changing type of '{}' from"
-                    " '{}' to '{}'".format(
-                        network_adapter.deviceInfo.label,
-                        type(network_adapter).__name__.rsplit(".", 1)[1][7:].lower(),
-                        adapter_type,
-                    )
+                    "Changing type of '%s' from" " '%s' to '%s'",
+                    network_adapter.deviceInfo.label,
+                    type(network_adapter).__name__.rsplit(".", 1)[1][7:].lower(),
+                    adapter_type,
                 )
     else:
         # If device is edited and type not specified or does not match,
@@ -105,17 +286,17 @@ def _create_adapter_type(network_adapter, adapter_type, network_adapter_label=""
         if network_adapter:
             if adapter_type:
                 log.error(
-                    "Cannot change type of '{}' to '{}'. "
-                    "Not changing type".format(
-                        network_adapter.deviceInfo.label, adapter_type
-                    )
+                    "Cannot change type of '%s' to '%s'. " "Not changing type",
+                    network_adapter.deviceInfo.label,
+                    adapter_type,
                 )
             edited_network_adapter = network_adapter
         else:
             if not adapter_type:
                 log.trace(
-                    "The type of '{}' has not been specified. "
-                    "Creating of default type 'vmxnet3'".format(network_adapter_label)
+                    "The type of '%s' has not been specified. "
+                    "Creating of default type 'vmxnet3'",
+                    network_adapter_label,
                 )
             edited_network_adapter = vim.vm.device.VirtualVmxnet3()
     return edited_network_adapter
@@ -136,19 +317,15 @@ def _create_network_backing(network_name, switch_type, parent_ref):
         Parent reference to search for network
     """
     log.trace(
-        "Configuring virtual machine network backing network_name={} "
-        "switch_type={} parent={}".format(
-            network_name,
-            switch_type,
-            salt.utils.vmware.get_managed_object_name(parent_ref),
-        )
+        "Configuring virtual machine network backing network_name=%s " "switch_type=%s parent=%s",
+        network_name,
+        switch_type,
+        salt.utils.vmware.get_managed_object_name(parent_ref),
     )
     backing = {}
     if network_name:
         if switch_type == "standard":
-            networks = salt.utils.vmware.get_networks(
-                parent_ref, network_names=[network_name]
-            )
+            networks = salt.utils.vmware.get_networks(parent_ref, network_names=[network_name])
             if not networks:
                 raise salt.exceptions.VMwareObjectRetrievalError(
                     "The network '{}' could not be " "retrieved.".format(network_name)
@@ -163,17 +340,14 @@ def _create_network_backing(network_name, switch_type, parent_ref):
             )
             if not networks:
                 raise salt.exceptions.VMwareObjectRetrievalError(
-                    "The port group '{}' could not be "
-                    "retrieved.".format(network_name)
+                    "The port group '{}' could not be " "retrieved.".format(network_name)
                 )
             network_ref = networks[0]
             dvs_port_connection = vim.dvs.PortConnection(
                 portgroupKey=network_ref.key,
                 switchUuid=network_ref.config.distributedVirtualSwitch.uuid,
             )
-            backing = (
-                vim.vm.device.VirtualEthernetCard.DistributedVirtualPortBackingInfo()
-            )
+            backing = vim.vm.device.VirtualEthernetCard.DistributedVirtualPortBackingInfo()
             backing.port = dvs_port_connection
     return backing
 
@@ -253,6 +427,35 @@ def _get_device_by_label(devices, label):
         )
 
 
+def _apply_advanced_config(config_spec, advanced_config, vm_extra_config=None):
+    """
+    Sets configuration parameters for the vm
+
+    config_spec
+        vm.ConfigSpec object
+
+    advanced_config
+        config key value pairs
+
+    vm_extra_config
+        Virtual machine vm_ref.config.extraConfig object
+    """
+    log.trace("Configuring advanced configuration " "parameters %s", advanced_config)
+    if isinstance(advanced_config, str):
+        raise salt.exceptions.ArgumentValueError(
+            "The specified 'advanced_configs' configuration "
+            "option cannot be parsed, please check the parameters"
+        )
+    for key, value in advanced_config.items():
+        if vm_extra_config:
+            for option in vm_extra_config:
+                if option.key == key and option.value == str(value):
+                    continue
+        else:
+            option = vim.option.OptionValue(key=key, value=value)
+            config_spec.extraConfig.append(option)
+
+
 def _apply_hardware_version(hardware_version, config_spec, operation="add"):
     """
     Specifies vm container version or schedules upgrade,
@@ -268,14 +471,9 @@ def _apply_hardware_version(hardware_version, config_spec, operation="add"):
         Defines the operation which should be used,
         the possibles values: 'add' and 'edit', the default value is 'add'
     """
-    log.trace(
-        "Configuring virtual machine hardware "
-        "version version={}".format(hardware_version)
-    )
+    log.trace("Configuring virtual machine hardware " "version version=%s", hardware_version)
     if operation == "edit":
-        log.trace(
-            "Scheduling hardware version " "upgrade to {}".format(hardware_version)
-        )
+        log.trace("Scheduling hardware version " "upgrade to %s", hardware_version)
         scheduled_hardware_upgrade = vim.vm.ScheduledHardwareUpgradeInfo()
         scheduled_hardware_upgrade.upgradePolicy = "always"
         scheduled_hardware_upgrade.versionKey = hardware_version
@@ -294,9 +492,7 @@ def _apply_cpu_config(config_spec, cpu_props):
     cpu_props
         CPU properties dict
     """
-    log.trace(
-        "Configuring virtual machine CPU " "settings cpu_props={}".format(cpu_props)
-    )
+    log.trace("Configuring virtual machine CPU " "settings cpu_props=%s", cpu_props)
     if "count" in cpu_props:
         config_spec.numCPUs = int(cpu_props["count"])
     if "cores_per_socket" in cpu_props:
@@ -319,7 +515,7 @@ def _apply_memory_config(config_spec, memory):
     memory
         Memory size and unit
     """
-    log.trace("Configuring virtual machine memory " "settings memory={}".format(memory))
+    log.trace("Configuring virtual machine memory " "settings memory=%s", memory)
     if "size" in memory and "unit" in memory:
         try:
             if memory["unit"].lower() == "kb":
@@ -383,10 +579,13 @@ def _apply_network_adapter_config(
     switch_type.strip().lower()
     log.trace(
         "Configuring virtual machine network adapter "
-        "network_adapter_label={} network_name={} "
-        "adapter_type={} switch_type={} mac={}".format(
-            network_adapter_label, network_name, adapter_type, switch_type, mac
-        )
+        "network_adapter_label=%s network_name=%s "
+        "adapter_type=%s switch_type=%$ mac=%s",
+        network_adapter_label,
+        network_name,
+        adapter_type,
+        switch_type,
+        mac,
     )
     network_spec = vim.vm.device.VirtualDeviceSpec()
     network_spec.device = _create_adapter_type(
@@ -398,9 +597,7 @@ def _apply_network_adapter_config(
     elif operation == "edit":
         network_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
     if switch_type and network_name:
-        network_spec.device.backing = _create_network_backing(
-            network_name, switch_type, parent
-        )
+        network_spec.device.backing = _create_network_backing(network_name, switch_type, parent)
         network_spec.device.deviceInfo.summary = network_name
     if key:
         # random negative integer for creations, concrete device key
@@ -415,15 +612,11 @@ def _apply_network_adapter_config(
     if connectable:
         network_spec.device.connectable = vim.vm.device.VirtualDevice.ConnectInfo()
         network_spec.device.connectable.startConnected = connectable["start_connected"]
-        network_spec.device.connectable.allowGuestControl = connectable[
-            "allow_guest_control"
-        ]
+        network_spec.device.connectable.allowGuestControl = connectable["allow_guest_control"]
     return network_spec
 
 
-def _apply_scsi_controller(
-    adapter, adapter_type, bus_sharing, key, bus_number, operation
-):
+def _apply_scsi_controller(adapter, adapter_type, bus_sharing, key, bus_number, operation):
     """
     Returns a vim.vm.device.VirtualDeviceSpec object specifying to
     add/edit a SCSI controller
@@ -455,10 +648,13 @@ def _apply_scsi_controller(
           bus_sharing: 'no_sharing' or 'virtual_sharing' or 'physical_sharing'
     """
     log.trace(
-        "Configuring scsi controller adapter={} adapter_type={} "
-        "bus_sharing={} key={} bus_number={}".format(
-            adapter, adapter_type, bus_sharing, key, bus_number
-        )
+        "Configuring scsi controller adapter=%s adapter_type=%s "
+        "bus_sharing=%s key=%s bus_number=%s",
+        adapter,
+        adapter_type,
+        bus_sharing,
+        key,
+        bus_number,
     )
     scsi_spec = vim.vm.device.VirtualDeviceSpec()
     if adapter_type == "lsilogic":
@@ -485,19 +681,13 @@ def _apply_scsi_controller(
     if bus_sharing == "virtual_sharing":
         # Virtual disks can be shared between virtual machines on
         # the same server
-        scsi_spec.device.sharedBus = (
-            vim.vm.device.VirtualSCSIController.Sharing.virtualSharing
-        )
+        scsi_spec.device.sharedBus = vim.vm.device.VirtualSCSIController.Sharing.virtualSharing
     elif bus_sharing == "physical_sharing":
         # Virtual disks can be shared between virtual machines on any server
-        scsi_spec.device.sharedBus = (
-            vim.vm.device.VirtualSCSIController.Sharing.physicalSharing
-        )
+        scsi_spec.device.sharedBus = vim.vm.device.VirtualSCSIController.Sharing.physicalSharing
     elif bus_sharing == "no_sharing":
         # Virtual disks cannot be shared between virtual machines
-        scsi_spec.device.sharedBus = (
-            vim.vm.device.VirtualSCSIController.Sharing.noSharing
-        )
+        scsi_spec.device.sharedBus = vim.vm.device.VirtualSCSIController.Sharing.noSharing
     return scsi_spec
 
 
@@ -513,7 +703,7 @@ def _create_ide_controllers(ide_controllers):
     keys = range(-200, -250, -1)
     if ide_controllers:
         devs = [ide["adapter"] for ide in ide_controllers]
-        log.trace("Creating IDE controllers {}".format(devs))
+        log.trace("Creating IDE controllers %s", devs)
         for ide, key in zip(ide_controllers, keys):
             ide_ctrls.append(
                 _apply_ide_controller_config(ide["adapter"], "add", key, abs(key + 200))
@@ -538,10 +728,7 @@ def _apply_ide_controller_config(ide_controller_label, operation, key, bus_numbe
     bus_number
         Device bus number property
     """
-    log.trace(
-        "Configuring IDE controller "
-        "ide_controller_label={}".format(ide_controller_label)
-    )
+    log.trace("Configuring IDE controller " "ide_controller_label=%s", ide_controller_label)
     ide_spec = vim.vm.device.VirtualDeviceSpec()
     ide_spec.device = vim.vm.device.VirtualIDEController()
     if operation == "add":
@@ -569,12 +756,10 @@ def _create_sata_controllers(sata_controllers):
     keys = range(-15000, -15050, -1)
     if sata_controllers:
         devs = [sata["adapter"] for sata in sata_controllers]
-        log.trace("Creating SATA controllers {}".format(devs))
+        log.trace("Creating SATA controllers %s", devs)
         for sata, key in zip(sata_controllers, keys):
             sata_ctrls.append(
-                _apply_sata_controller_config(
-                    sata["adapter"], "add", key, sata["bus_number"]
-                )
+                _apply_sata_controller_config(sata["adapter"], "add", key, sata["bus_number"])
             )
     return sata_ctrls
 
@@ -596,10 +781,7 @@ def _apply_sata_controller_config(sata_controller_label, operation, key, bus_num
     bus_number
         Device bus number property
     """
-    log.trace(
-        "Configuring SATA controller "
-        "sata_controller_label={}".format(sata_controller_label)
-    )
+    log.trace("Configuring SATA controller " "sata_controller_label=%s", sata_controller_label)
     sata_spec = vim.vm.device.VirtualDeviceSpec()
     sata_spec.device = vim.vm.device.VirtualAHCIController()
     if operation == "add":
@@ -672,11 +854,13 @@ def _apply_cd_drive(
               allow_guest_control:
     """
     log.trace(
-        "Configuring CD/DVD drive drive_label={} "
-        "device_type={} client_device={} "
-        "datastore_iso_file={}".format(
-            drive_label, device_type, client_device, datastore_iso_file
-        )
+        "Configuring CD/DVD drive drive_label=%s "
+        "device_type=%s client_device=%s "
+        "datastore_iso_file=%s",
+        drive_label,
+        device_type,
+        client_device,
+        datastore_iso_file,
     )
     drive_spec = vim.vm.device.VirtualDeviceSpec()
     drive_spec.device = vim.vm.device.VirtualCdrom()
@@ -699,23 +883,18 @@ def _apply_cd_drive(
         drive_spec.device.deviceInfo.summary = "{}".format(datastore_iso_file["path"])
     elif device_type == "client_device":
         if client_device["mode"] == "passthrough":
-            drive_spec.device.backing = (
-                vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo()
-            )
+            drive_spec.device.backing = vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo()
         elif client_device["mode"] == "atapi":
-            drive_spec.device.backing = (
-                vim.vm.device.VirtualCdrom.RemoteAtapiBackingInfo()
-            )
+            drive_spec.device.backing = vim.vm.device.VirtualCdrom.RemoteAtapiBackingInfo()
     drive_spec.device.key = key
     drive_spec.device.deviceInfo.label = drive_label
     drive_spec.device.controllerKey = controller_key
     drive_spec.device.connectable = vim.vm.device.VirtualDevice.ConnectInfo()
     if connectable:
         drive_spec.device.connectable.startConnected = connectable["start_connected"]
-        drive_spec.device.connectable.allowGuestControl = connectable[
-            "allow_guest_control"
-        ]
+        drive_spec.device.connectable.allowGuestControl = connectable["allow_guest_control"]
     return drive_spec
+
 
 def _apply_hard_disk(
     unit_number,
@@ -768,19 +947,18 @@ def _apply_hard_disk(
         Full file name of the vm disk
     """
     log.trace(
-        "Configuring hard disk {} size={}, unit={}, "
-        "controller_key={}, thin_provision={}, "
-        "eagerly_scrub={}, datastore={}, "
-        "filename={}".format(
-            disk_label,
-            size,
-            unit,
-            controller_key,
-            thin_provision,
-            eagerly_scrub,
-            datastore,
-            filename,
-        )
+        "Configuring hard disk %s size={}, unit={}, "
+        "controller_key=%s, thin_provision={}, "
+        "eagerly_scrub=%s, datastore={}, "
+        "filename=%s",
+        disk_label,
+        size,
+        unit,
+        controller_key,
+        thin_provision,
+        eagerly_scrub,
+        datastore,
+        filename,
     )
     disk_spec = vim.vm.device.VirtualDeviceSpec()
     disk_spec.device = vim.vm.device.VirtualDisk()
@@ -847,7 +1025,7 @@ def _create_disks(service_instance, disks, scsi_controllers=None, parent=None):
     keys = range(-2000, -2050, -1)
     if disks:
         devs = [disk["adapter"] for disk in disks]
-        log.trace("Creating disks {}".format(devs))
+        log.trace("Creating disks %s", devs)
     for disk, key in zip(disks, keys):
         # create the disk
         filename, datastore, datastore_ref = None, None, None
@@ -870,8 +1048,7 @@ def _create_disks(service_instance, disks, scsi_controllers=None, parent=None):
                     break
             else:
                 raise salt.exceptions.VMwareObjectNotFoundError(
-                    "The given controller does not exist: "
-                    "{}".format(disk["controller"])
+                    "The given controller does not exist: " "{}".format(disk["controller"])
                 )
         if "datastore" in disk:
             datastore_ref = salt.utils.vmware.get_datastores(
@@ -917,7 +1094,7 @@ def _create_scsi_devices(scsi_devices):
     scsi_specs = []
     if scsi_devices:
         devs = [scsi["adapter"] for scsi in scsi_devices]
-        log.trace("Creating SCSI devices {}".format(devs))
+        log.trace("Creating SCSI devices %s", devs)
         # unitNumber for disk attachment, 0:0 1st 0 is the controller busNumber,
         # 2nd is the unitNumber
         for (key, scsi_controller) in zip(keys, scsi_devices):
@@ -959,7 +1136,7 @@ def _create_network_adapters(network_interfaces, parent=None):
     keys = range(-4000, -4050, -1)
     if network_interfaces:
         devs = [inter["adapter"] for inter in network_interfaces]
-        log.trace("Creating network interfaces {}".format(devs))
+        log.trace("Creating network interfaces %s", devs)
         for interface, key in zip(network_interfaces, keys):
             network_spec = _apply_network_adapter_config(
                 key,
@@ -968,9 +1145,7 @@ def _create_network_adapters(network_interfaces, parent=None):
                 interface["switch_type"],
                 network_adapter_label=interface["adapter"],
                 operation="add",
-                connectable=interface["connectable"]
-                if "connectable" in interface
-                else None,
+                connectable=interface["connectable"] if "connectable" in interface else None,
                 mac=interface["mac"],
                 parent=parent,
             )
@@ -1016,13 +1191,11 @@ def _apply_serial_port(serial_device_spec, key, operation="add"):
             yield: False
     """
     log.trace(
-        "Creating serial port adapter={} type={} connectable={} "
-        "yield={}".format(
-            serial_device_spec["adapter"],
-            serial_device_spec["type"],
-            serial_device_spec["connectable"],
-            serial_device_spec["yield"],
-        )
+        "Creating serial port adapter=%s type=%s connectable=%s " "yield=%s",
+        serial_device_spec["adapter"],
+        serial_device_spec["type"],
+        serial_device_spec["connectable"],
+        serial_device_spec["yield"],
     )
     device_spec = vim.vm.device.VirtualDeviceSpec()
     device_spec.device = vim.vm.device.VirtualSerialPort()
@@ -1050,9 +1223,7 @@ def _apply_serial_port(serial_device_spec, key, operation="add"):
         type_backing = vim.vm.device.VirtualSerialPort.FileBackingInfo()
     if serial_device_spec["type"] == "device":
         type_backing = vim.vm.device.VirtualSerialPort.DeviceBackingInfo()
-    connect_info.allowGuestControl = serial_device_spec["connectable"][
-        "allow_guest_control"
-    ]
+    connect_info.allowGuestControl = serial_device_spec["connectable"]["allow_guest_control"]
     connect_info.startConnected = serial_device_spec["connectable"]["start_connected"]
     device_spec.device.backing = type_backing
     device_spec.device.connectable = connect_info
@@ -1075,7 +1246,7 @@ def _create_serial_ports(serial_ports):
     keys = range(-9000, -9050, -1)
     if serial_ports:
         devs = [serial["adapter"] for serial in serial_ports]
-        log.trace("Creating serial ports {}".format(devs))
+        log.trace("Creating serial ports %s", devs)
         for port, key in zip(serial_ports, keys):
             serial_port_device = _apply_serial_port(port, key, "add")
             ports.append(serial_port_device)
@@ -1100,7 +1271,7 @@ def _create_cd_drives(cd_drives, controllers=None, parent_ref=None):
     keys = range(-3000, -3050, -1)
     if cd_drives:
         devs = [dvd["adapter"] for dvd in cd_drives]
-        log.trace("Creating cd/dvd drives {}".format(devs))
+        log.trace("Creating cd/dvd drives %s", devs)
         for drive, key in zip(cd_drives, keys):
             # if a controller is not available/cannot be created we should use the
             #  one which is available by default, this is 'IDE 0'
@@ -1114,15 +1285,11 @@ def _create_cd_drives(cd_drives, controllers=None, parent_ref=None):
                     key,
                     drive["device_type"],
                     "add",
-                    client_device=drive["client_device"]
-                    if "client_device" in drive
-                    else None,
+                    client_device=drive["client_device"] if "client_device" in drive else None,
                     datastore_iso_file=drive["datastore_iso_file"]
                     if "datastore_iso_file" in drive
                     else None,
-                    connectable=drive["connectable"]
-                    if "connectable" in drive
-                    else None,
+                    connectable=drive["connectable"] if "connectable" in drive else None,
                     controller_key=controller_key,
                     parent_ref=parent_ref,
                 )
@@ -1144,7 +1311,7 @@ def _update_disks(disks_old_new):
     disk_changes = []
     if disks_old_new:
         devs = [disk["old"]["address"] for disk in disks_old_new]
-        log.trace("Updating disks {}".format(devs))
+        log.trace("Updating disks %s", devs)
         for item in disks_old_new:
             current_disk = item["old"]
             next_disk = item["new"]
@@ -1164,13 +1331,12 @@ def _update_disks(disks_old_new):
                     )
                 log.trace(
                     "Virtual machine disk will be updated "
-                    "size={} unit={} controller_key={} "
-                    "unit_number={}".format(
-                        next_disk["size"],
-                        next_disk["unit"],
-                        current_disk["controller_key"],
-                        current_disk["unit_number"],
-                    )
+                    "size=%s unit=%s controller_key=%s "
+                    "unit_number=%s",
+                    next_disk["size"],
+                    next_disk["unit"],
+                    current_disk["controller_key"],
+                    current_disk["unit_number"],
                 )
                 device_config_spec = _apply_hard_disk(
                     current_disk["unit_number"],
@@ -1199,7 +1365,7 @@ def _update_scsi_devices(scsis_old_new, current_disks):
     device_config_specs = []
     if scsis_old_new:
         devs = [scsi["old"]["adapter"] for scsi in scsis_old_new]
-        log.trace("Updating SCSI controllers {}".format(devs))
+        log.trace("Updating SCSI controllers %s", devs)
         for item in scsis_old_new:
             next_scsi = item["new"]
             current_scsi = item["old"]
@@ -1208,13 +1374,12 @@ def _update_scsi_devices(scsis_old_new, current_disks):
             if difference.changed():
                 log.trace(
                     "Virtual machine scsi device will be updated "
-                    "key={} bus_number={} type={} "
-                    "bus_sharing={}".format(
-                        current_scsi["key"],
-                        current_scsi["bus_number"],
-                        next_scsi["type"],
-                        next_scsi["bus_sharing"],
-                    )
+                    "key=%s bus_number=%s type=%s "
+                    "bus_sharing=%s",
+                    current_scsi["key"],
+                    current_scsi["bus_number"],
+                    next_scsi["type"],
+                    next_scsi["bus_sharing"],
                 )
                 # The sharedBus property is not optional
                 # The type can only be updated if we delete the original
@@ -1237,9 +1402,7 @@ def _update_scsi_devices(scsis_old_new, current_disks):
                     disks_to_update = []
                     for disk_key in current_scsi["device"]:
                         disk_objects = [disk["object"] for disk in current_disks]
-                        disks_to_update.append(
-                            _get_device_by_key(disk_objects, disk_key)
-                        )
+                        disks_to_update.append(_get_device_by_key(disk_objects, disk_key))
                     for current_disk in disks_to_update:
                         disk_spec = vim.vm.device.VirtualDeviceSpec()
                         disk_spec.device = current_disk
@@ -1275,7 +1438,7 @@ def _update_network_adapters(interface_old_new, parent):
     network_changes = []
     if interface_old_new:
         devs = [inter["old"]["mac"] for inter in interface_old_new]
-        log.trace("Updating network interfaces {}".format(devs))
+        log.trace("Updating network interfaces %s", devs)
         for item in interface_old_new:
             current_interface = item["old"]
             next_interface = item["new"]
@@ -1284,13 +1447,12 @@ def _update_network_adapters(interface_old_new, parent):
             if difference.changed():
                 log.trace(
                     "Virtual machine network adapter will be updated "
-                    "switch_type={} name={} adapter_type={} "
-                    "mac={}".format(
-                        next_interface["switch_type"],
-                        next_interface["name"],
-                        current_interface["adapter_type"],
-                        current_interface["mac"],
-                    )
+                    "switch_type=%s name=%s adapter_type=%s "
+                    "mac=%s",
+                    next_interface["switch_type"],
+                    next_interface["name"],
+                    current_interface["adapter_type"],
+                    current_interface["mac"],
                 )
                 device_config_spec = _apply_network_adapter_config(
                     current_interface["key"],
@@ -1317,7 +1479,7 @@ def _update_serial_ports(serial_old_new):
     serial_changes = []
     if serial_old_new:
         devs = [serial["old"]["adapter"] for serial in serial_old_new]
-        log.trace("Updating serial ports {}".format(devs))
+        log.trace("Updating serial ports %s", devs)
         for item in serial_old_new:
             current_serial = item["old"]
             next_serial = item["new"]
@@ -1348,7 +1510,7 @@ def _update_cd_drives(drives_old_new, controllers=None, parent=None):
     cd_changes = []
     if drives_old_new:
         devs = [drive["old"]["adapter"] for drive in drives_old_new]
-        log.trace("Updating cd/dvd drives {}".format(devs))
+        log.trace("Updating cd/dvd drives %s", devs)
         for item in drives_old_new:
             current_drive = item["old"]
             new_drive = item["new"]
@@ -1356,9 +1518,7 @@ def _update_cd_drives(drives_old_new, controllers=None, parent=None):
             difference.ignore_unset_values = False
             if difference.changed():
                 if controllers:
-                    controller = _get_device_by_label(
-                        controllers, new_drive["controller"]
-                    )
+                    controller = _get_device_by_label(controllers, new_drive["controller"])
                     controller_key = controller.key
                 else:
                     controller_key = current_drive["controller_key"]
@@ -1390,7 +1550,7 @@ def _delete_device(device):
     device
         Device data type object
     """
-    log.trace("Deleting device with type {}".format(type(device)))
+    log.trace("Deleting device with type %s", type(device))
     device_spec = vim.vm.device.VirtualDeviceSpec()
     device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.remove
     device_spec.device = device
@@ -1399,15 +1559,15 @@ def _delete_device(device):
 
 @depends(HAS_PYVMOMI)
 def power_on_vm(
-        name,
-        datacenter=None,
-        host=None,
-        vcenter=None,
-        username=None,
-        password=None,
-        protocol=None,
-        port=None,
-        verify_ssl=True,
+    name,
+    datacenter=None,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Powers on a virtual machine specified by its name.
@@ -1449,22 +1609,21 @@ def power_on_vm(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
-    log.trace("Powering on virtual machine {}".format(name))
+    log.trace("Powering on virtual machine %s", name)
     vm_properties = ["name", "summary.runtime.powerState"]
     virtual_machine = saltext.vmware.utils.vmware.get_vm_by_property(
-        service_instance, 
-        name,
-        datacenter=datacenter,
-        vm_properties=vm_properties
+        service_instance, name, datacenter=datacenter, vm_properties=vm_properties
     )
     if virtual_machine["summary.runtime.powerState"] == "poweredOn":
         result = {
@@ -1482,15 +1641,15 @@ def power_on_vm(
 
 @depends(HAS_PYVMOMI)
 def power_off_vm(
-        name,
-        datacenter=None,
-        host=None,
-        vcenter=None,
-        username=None,
-        password=None,
-        protocol=None,
-        port=None,
-        verify_ssl=True,
+    name,
+    datacenter=None,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Powers off a virtual machine specified by its name.
@@ -1532,22 +1691,21 @@ def power_off_vm(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
-    log.trace("Powering off virtual machine {}".format(name))
+    log.trace("Powering off virtual machine %s", name)
     vm_properties = ["name", "summary.runtime.powerState"]
     virtual_machine = saltext.vmware.utils.vmware.get_vm_by_property(
-        service_instance, 
-        name,
-        datacenter=datacenter,
-        vm_properties=vm_properties
+        service_instance, name, datacenter=datacenter, vm_properties=vm_properties
     )
     if virtual_machine["summary.runtime.powerState"] == "poweredOff":
         result = {
@@ -1562,14 +1720,11 @@ def power_off_vm(
     }
     return result
 
+
 @depends(HAS_PYVMOMI)
-def list_vms(host=None,
-             vcenter=None,
-             username=None,
-             password=None,
-             protocol=None,
-             port=None,
-             verify_ssl=True):
+def list_vms(
+    host=None, vcenter=None, username=None, password=None, protocol=None, port=None, verify_ssl=True
+):
     """
     Returns a list of VMs for the specified host.
 
@@ -1605,29 +1760,34 @@ def list_vms(host=None,
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     return saltext.vmware.utils.vmware.list_vms(service_instance)
 
+
 @depends(HAS_PYVMOMI)
-def delete_vm(name,
-              datacenter,
-              placement=None,
-              power_off=False,
-              host=None,
-              vcenter=None,
-              username=None,
-              password=None,
-              protocol=None,
-              port=None,
-              verify_ssl=True):
+def delete_vm(
+    name,
+    datacenter,
+    placement=None,
+    power_off=False,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
+):
     """
     Deletes a virtual machine defined by name and placement
 
@@ -1668,13 +1828,15 @@ def delete_vm(name,
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     results = {}
@@ -1684,7 +1846,7 @@ def delete_vm(name,
             {"name": name, "datacenter": datacenter, "placement": placement}, schema
         )
     except jsonschema.exceptions.ValidationError as exc:
-        raise InvalidConfigError(exc)
+        raise InvalidConfigError(exc) from exc
     (results, vm_ref) = _remove_vm(
         name,
         datacenter,
@@ -1856,13 +2018,15 @@ def create_vm(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     # If datacenter is specified, set the container reference to start search
@@ -1871,9 +2035,7 @@ def create_vm(
     (resourcepool_object, placement_object) = saltext.vmware.utils.vmware.get_placement(
         service_instance, datacenter, placement=placement
     )
-    folder_object = saltext.vmware.utils.vmware.get_folder(
-        service_instance, datacenter, placement
-    )
+    folder_object = saltext.vmware.utils.vmware.get_folder(service_instance, datacenter, placement)
     # Create the config specs
     config_spec = vim.vm.ConfigSpec()
     config_spec.name = vm_name
@@ -1895,14 +2057,11 @@ def create_vm(
         )
         if "summary.type" in ds_summary and ds_summary["summary.type"] == "vsan":
             log.trace(
-                "The vmPathName should be the datastore "
-                "name if the datastore type is vsan"
+                "The vmPathName should be the datastore " "name if the datastore type is vsan"
             )
             config_spec.files.vmPathName = "[{}]".format(datastore)
         else:
-            config_spec.files.vmPathName = "[{0}] {1}/{1}.vmx".format(
-                datastore, vm_name
-            )
+            config_spec.files.vmPathName = "[{0}] {1}/{1}.vmx".format(datastore, vm_name)
     except salt.exceptions.VMwareApiError:
         config_spec.files.vmPathName = "[{0}] {1}/{1}.vmx".format(datastore, vm_name)
 
@@ -1926,9 +2085,10 @@ def create_vm(
         )
         config_spec.deviceChange.extend(disk_specs)
     if interfaces:
-        (interface_specs, nic_settings) = _create_network_adapters(
-            interfaces, parent=container_object
-        )
+        (
+            interface_specs,
+            nic_settings,  # pylint: disable=unused-variable
+        ) = _create_network_adapters(interfaces, parent=container_object)
         config_spec.deviceChange.extend(interface_specs)
     if serial_ports:
         serial_port_specs = _create_serial_ports(serial_ports)
@@ -2046,18 +2206,18 @@ def update_vm(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
-    current_config = get_vm_config(
-        vm_name, datacenter=datacenter, objects=True, service_instance=service_instance
-    )
+    current_config = get_vm_config(vm_name, datacenter=datacenter, objects=True)
     diffs = compare_vm_configs(
         {
             "name": vm_name,
@@ -2106,9 +2266,7 @@ def update_vm(
     if "scsi_devices" in difference_keys and "disks" in current_config:
         scsi_changes = []
         scsi_changes.extend(
-            _update_scsi_devices(
-                diffs["scsi_devices"].intersect, current_config["disks"]
-            )
+            _update_scsi_devices(diffs["scsi_devices"].intersect, current_config["disks"])
         )
         for item in diffs["scsi_devices"].removed:
             scsi_changes.append(_delete_device(item["object"]))
@@ -2122,9 +2280,7 @@ def update_vm(
             disk_changes.append(_delete_device(item["object"]))
         # We will need the existing and new controllers as well
         scsi_controllers = [dev["object"] for dev in current_config["scsi_devices"]]
-        scsi_controllers.extend(
-            [device_spec.device for device_spec in new_scsi_devices]
-        )
+        scsi_controllers.extend([device_spec.device for device_spec in new_scsi_devices])
         disk_changes.extend(
             _create_disks(
                 service_instance,
@@ -2141,9 +2297,9 @@ def update_vm(
         )
         for item in diffs["interfaces"].removed:
             network_changes.append(_delete_device(item["object"]))
-        (adapters, nics) = _create_network_adapters(
+        (adapters, nics) = _create_network_adapters(  # pylint: disable=unused-variable
             diffs["interfaces"].added, datacenter_ref
-        )
+        )  # pylint: disable=unused-variable
         network_changes.extend(adapters)
         config_spec.deviceChange.extend(network_changes)
     if "serial_ports" in difference_keys:
@@ -2203,17 +2359,17 @@ def update_vm(
 
 @depends(HAS_PYVMOMI)
 def register_vm(
-        name,
-        datacenter,
-        placement,
-        vmx_path,
-        host=None,
-        vcenter=None,
-        username=None,
-        password=None,
-        protocol=None,
-        port=None,
-        verify_ssl=True,
+    name,
+    datacenter,
+    placement,
+    vmx_path,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Registers a virtual machine to the inventory with the given vmx file.
@@ -2254,19 +2410,24 @@ def register_vm(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     log.trace(
         "Registering virtual machine with properties "
-        "datacenter={}, placement={}, "
-        "vmx_path={}".format(datacenter, placement, vmx_path)
+        "datacenter=%s, placement={}, "
+        "vmx_path=%s",
+        datacenter,
+        placement,
+        vmx_path,
     )
     datacenter_object = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
     if "cluster" in placement:
@@ -2338,13 +2499,12 @@ def _remove_vm(name, datacenter, service_instance, placement=None, power_off=Non
     """
     results = {}
     if placement:
-        (resourcepool_object, placement_object) = saltext.vmware.utils.vmware.get_placement(
-            service_instance, datacenter, placement
-        )
+        (
+            resourcepool_object,  # pylint: disable=unused-variable
+            placement_object,
+        ) = saltext.vmware.utils.vmware.get_placement(service_instance, datacenter, placement)
     else:
-        placement_object = saltext.vmware.utils.vmware.get_datacenter(
-            service_instance, datacenter
-        )
+        placement_object = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
     if power_off:
         power_off_vm(name, datacenter, service_instance)
         results["powered_off"] = True
@@ -2361,89 +2521,6 @@ def _remove_vm(name, datacenter, service_instance, placement=None, power_off=Non
             "{} was not found".format(name, datacenter)
         )
     return results, vm_ref
-
-
-@depends(HAS_PYVMOMI)
-def delete_vm(
-    name,
-    datacenter,
-    placement=None,
-    power_off=False,
-    host=None,
-    vcenter=None,
-    username=None,
-    password=None,
-    protocol=None,
-    port=None,
-    verify_ssl=True,
-):
-    """
-    Deletes a virtual machine defined by name and placement
-
-    name
-        Name of the virtual machine
-
-    datacenter
-        Datacenter of the virtual machine
-
-    placement
-        Placement information of the virtual machine
-
-    host
-        The location of the host.
-
-    username
-        The username used to login to the host, such as ``root``.
-
-    password
-        The password used to login to the host.
-
-    protocol
-        Optionally set to alternate protocol if the host is not using the default
-        protocol. Default protocol is ``https``.
-
-    port
-        Optionally set to alternate port if the host is not using the default
-        port. Default port is ``443``.
-
-    verify_ssl
-        Verify the SSL certificate. Default: True
-
-    .. code-block:: bash
-
-        salt '*' vsphere.delete_vm name=my_vm datacenter=my_datacenter
-
-    """
-    if salt.utils.platform.is_proxy():
-        details = __salt__["vmware_info.get_proxy_connection_details"]()
-    else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
-    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
-
-    results = {}
-    schema = ESXVirtualMachineDeleteSchema.serialize()
-    try:
-        jsonschema.validate(
-            {"name": name, "datacenter": datacenter, "placement": placement}, schema
-        )
-    except jsonschema.exceptions.ValidationError as exc:
-        raise InvalidConfigError(exc)
-    (results, vm_ref) = _remove_vm(
-        name,
-        datacenter,
-        service_instance=service_instance,
-        placement=placement,
-        power_off=power_off,
-    )
-    saltext.vmware.utils.vmware.delete_vm(vm_ref)
-    results["deleted_vm"] = True
-    return results
 
 
 @depends(HAS_PYVMOMI)
@@ -2500,13 +2577,15 @@ def unregister_vm(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     results = {}
@@ -2516,7 +2595,7 @@ def unregister_vm(
             {"name": name, "datacenter": datacenter, "placement": placement}, schema
         )
     except jsonschema.exceptions.ValidationError as exc:
-        raise InvalidConfigError(exc)
+        raise InvalidConfigError(exc) from exc
     (results, vm_ref) = _remove_vm(
         name,
         datacenter,
@@ -2585,13 +2664,15 @@ def get_vm(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     virtual_machine = saltext.vmware.utils.vmware.get_vm_by_property(
@@ -2607,17 +2688,17 @@ def get_vm(
 
 @depends(HAS_PYVMOMI)
 def get_vm_config_file(
-        name,
-        datacenter,
-        placement,
-        datastore,
-        host=None,
-        vcenter=None,
-        username=None,
-        password=None,
-        protocol=None,
-        port=None,
-        verify_ssl=True,
+    name,
+    datacenter,
+    placement,
+    datastore,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Queries the virtual machine config file and returns
@@ -2656,13 +2737,15 @@ def get_vm_config_file(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     browser_spec = vim.host.DatastoreBrowser.SearchSpec()
@@ -2698,16 +2781,16 @@ def get_vm_config_file(
 
 
 def get_vm_config(
-        name,
-        datacenter=None,
-        objects=True,
-        host=None,
-        vcenter=None,
-        username=None,
-        password=None,
-        protocol=None,
-        port=None,
-        verify_ssl=True,
+    name,
+    datacenter=None,
+    objects=True,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Queries and converts the virtual machine properties to the available format
@@ -2749,13 +2832,15 @@ def get_vm_config(
     if salt.utils.platform.is_proxy():
         details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        details = __salt__["vmware_info.get_connection_details"](host=host,
-                                                                 vcenter=vcenter,
-                                                                 username=username,
-                                                                 password=password,
-                                                                 protocol=protocol,
-                                                                 port=port,
-                                                                 verify_ssl=verify_ssl)
+        details = __salt__["vmware_info.get_connection_details"](
+            host=host,
+            vcenter=vcenter,
+            username=username,
+            password=password,
+            protocol=protocol,
+            port=port,
+            verify_ssl=verify_ssl,
+        )
     service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     properties = [
@@ -2862,9 +2947,9 @@ def get_vm_config(
         if isinstance(device, vim.vm.device.VirtualEthernetCard):
             interface = {}
             interface["adapter"] = device.deviceInfo.label
-            interface[
-                "adapter_type"
-            ] = saltext.vmware.utils.vmware.get_network_adapter_object_type(device)
+            interface["adapter_type"] = saltext.vmware.utils.vmware.get_network_adapter_object_type(
+                device
+            )
             interface["connectable"] = {
                 "allow_guest_control": device.connectable.allowGuestControl,
                 "connected": device.connectable.connected,
@@ -2884,9 +2969,7 @@ def get_vm_config(
                     property_name="key",
                     container_ref=parent_ref,
                 )
-            elif isinstance(
-                device.backing, vim.vm.device.VirtualEthernetCard.NetworkBackingInfo
-            ):
+            elif isinstance(device.backing, vim.vm.device.VirtualEthernetCard.NetworkBackingInfo):
                 interface["switch_type"] = "standard"
                 network_ref = device.backing.network
             interface["name"] = saltext.vmware.utils.vmware.get_managed_object_name(network_ref)
@@ -2901,14 +2984,10 @@ def get_vm_config(
                 virtual_machine["config.hardware.device"], device.controllerKey
             )
             drive["controller"] = controller.deviceInfo.label
-            if isinstance(
-                device.backing, vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo
-            ):
+            if isinstance(device.backing, vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo):
                 drive["device_type"] = "client_device"
                 drive["client_device"] = {"mode": "passthrough"}
-            if isinstance(
-                device.backing, vim.vm.device.VirtualCdrom.RemoteAtapiBackingInfo
-            ):
+            if isinstance(device.backing, vim.vm.device.VirtualCdrom.RemoteAtapiBackingInfo):
                 drive["device_type"] = "client_device"
                 drive["client_device"] = {"mode": "atapi"}
             if isinstance(device.backing, vim.vm.device.VirtualCdrom.IsoBackingInfo):
@@ -2927,26 +3006,18 @@ def get_vm_config(
         if isinstance(device, vim.vm.device.VirtualSerialPort):
             port = {}
             port["adapter"] = device.deviceInfo.label
-            if isinstance(
-                device.backing, vim.vm.device.VirtualSerialPort.URIBackingInfo
-            ):
+            if isinstance(device.backing, vim.vm.device.VirtualSerialPort.URIBackingInfo):
                 port["type"] = "network"
                 port["backing"] = {
                     "uri": device.backing.proxyURI,
                     "direction": device.backing.direction,
                     "filename": device.backing.serviceURI,
                 }
-            if isinstance(
-                device.backing, vim.vm.device.VirtualSerialPort.PipeBackingInfo
-            ):
+            if isinstance(device.backing, vim.vm.device.VirtualSerialPort.PipeBackingInfo):
                 port["type"] = "pipe"
-            if isinstance(
-                device.backing, vim.vm.device.VirtualSerialPort.FileBackingInfo
-            ):
+            if isinstance(device.backing, vim.vm.device.VirtualSerialPort.FileBackingInfo):
                 port["type"] = "file"
-            if isinstance(
-                device.backing, vim.vm.device.VirtualSerialPort.DeviceBackingInfo
-            ):
+            if isinstance(device.backing, vim.vm.device.VirtualSerialPort.DeviceBackingInfo):
                 port["type"] = "device"
             port["yield"] = device.yieldOnPoll
             port["connectable"] = {
@@ -2969,3 +3040,112 @@ def get_vm_config(
             current_config["sata_controllers"].append(sata)
 
     return current_config
+
+
+def _convert_units(devices):
+    """
+    Updates the size and unit dictionary values with the new unit values
+
+    devices
+        List of device data objects
+    """
+    if devices:
+        for device in devices:
+            if "unit" in device and "size" in device:
+                device.update(salt.utils.vmware.convert_to_kb(device["unit"], device["size"]))
+    else:
+        return False
+    return True
+
+
+def compare_vm_configs(new_config, current_config):
+    """
+    Compares virtual machine current and new configuration, the current is the
+    one which is deployed now, and the new is the target config. Returns the
+    differences between the objects in a dictionary, the keys are the
+    configuration parameter keys and the values are differences objects: either
+    list or recursive difference
+
+    new_config:
+        New config dictionary with every available parameter
+
+    current_config
+        Currently deployed configuration
+    """
+    diffs = {}
+    keys = set(new_config.keys())
+
+    # These values identify the virtual machine, comparison is unnecessary
+    keys.discard("name")
+    keys.discard("datacenter")
+    keys.discard("datastore")
+    for property_key in ("version", "image"):
+        if property_key in keys:
+            single_value_diff = recursive_diff(
+                {property_key: current_config[property_key]},
+                {property_key: new_config[property_key]},
+            )
+            if single_value_diff.diffs:
+                diffs[property_key] = single_value_diff
+            keys.discard(property_key)
+
+    if "cpu" in keys:
+        keys.remove("cpu")
+        cpu_diff = recursive_diff(current_config["cpu"], new_config["cpu"])
+        if cpu_diff.diffs:
+            diffs["cpu"] = cpu_diff
+
+    if "memory" in keys:
+        keys.remove("memory")
+        _convert_units([current_config["memory"]])
+        _convert_units([new_config["memory"]])
+        memory_diff = recursive_diff(current_config["memory"], new_config["memory"])
+        if memory_diff.diffs:
+            diffs["memory"] = memory_diff
+
+    if "advanced_configs" in keys:
+        keys.remove("advanced_configs")
+        key = "advanced_configs"
+        advanced_diff = recursive_diff(current_config[key], new_config[key])
+        if advanced_diff.diffs:
+            diffs[key] = advanced_diff
+
+    if "disks" in keys:
+        keys.remove("disks")
+        _convert_units(current_config["disks"])
+        _convert_units(new_config["disks"])
+        disk_diffs = list_diff(current_config["disks"], new_config["disks"], "address")
+        # REMOVE UNSUPPORTED DIFFERENCES/CHANGES
+        # If the disk already exist, the backing properties like eagerly scrub
+        # and thin provisioning
+        # cannot be updated, and should not be identified as differences
+        disk_diffs.remove_diff(diff_key="eagerly_scrub")
+        # Filename updates are not supported yet, on VSAN datastores the
+        # backing.fileName points to a uid + the vmdk name
+        disk_diffs.remove_diff(diff_key="filename")
+        # The adapter name shouldn't be changed
+        disk_diffs.remove_diff(diff_key="adapter")
+        if disk_diffs.diffs:
+            diffs["disks"] = disk_diffs
+
+    if "interfaces" in keys:
+        keys.remove("interfaces")
+        interface_diffs = list_diff(current_config["interfaces"], new_config["interfaces"], "mac")
+        # The adapter name shouldn't be changed
+        interface_diffs.remove_diff(diff_key="adapter")
+        if interface_diffs.diffs:
+            diffs["interfaces"] = interface_diffs
+
+    # For general items where the identification can be done by adapter
+    for key in keys:
+        if key not in current_config or key not in new_config:
+            raise ValueError(
+                "A general device {} configuration was "
+                "not supplied or it was not retrieved from "
+                "remote configuration".format(key)
+            )
+        device_diffs = list_diff(current_config[key], new_config[key], "adapter")
+        if device_diffs.diffs:
+            diffs[key] = device_diffs
+
+    return diffs

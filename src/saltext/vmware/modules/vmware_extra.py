@@ -1,135 +1,234 @@
-   Returns the connection details of the following proxies: esxi
-    """
-    proxytype = get_proxy_type()
-    if proxytype == "esxi":
-        details = __salt__["esxi.get_details"]()
-    elif proxytype == "esxcluster":
-        details = __salt__["esxcluster.get_details"]()
-    elif proxytype == "esxdatacenter":
-        details = __salt__["esxdatacenter.get_details"]()
-    elif proxytype == "vcenter":
-        details = __salt__["vcenter.get_details"]()
-    elif proxytype == "esxvm":
-        details = __salt__["esxvm.get_details"]()
-    else:
-        raise CommandExecutionError("'{}' proxy is not supported" "".format(proxytype))
-    proxy_details = [
-        details.get("vcenter") if "vcenter" in details else details.get("host"),
-        details.get("username"),
-        details.get("password"),
-        details.get("protocol"),
-        details.get("port"),
-        details.get("mechanism"),
-        details.get("principal"),
-        details.get("domain"),
-    ]
-    if "verify_ssl" in details:
-        proxy_details.append(details.get("verify_ssl"))
-    return tuple(proxy_details)
+# pylint: disable=C0302
+"""
+Manage VMware vCenter servers and ESXi hosts.
+
+.. versionadded:: 2015.8.4
+
+:codeauthor: Alexandru Bleotu <alexandru.bleotu@morganstaley.com>
+
+Dependencies
+============
+
+- pyVmomi Python Module
+- ESXCLI
+
+pyVmomi
+-------
+
+PyVmomi can be installed via pip:
+
+.. code-block:: bash
+
+    pip install pyVmomi
+
+.. note::
+
+    Version 6.0 of pyVmomi has some problems with SSL error handling on certain
+    versions of Python. If using version 6.0 of pyVmomi, Python 2.7.9,
+    or newer must be present. This is due to an upstream dependency
+    in pyVmomi 6.0 that is not supported in Python versions 2.7 to 2.7.8. If the
+    version of Python is not in the supported range, you will need to install an
+    earlier version of pyVmomi. See `Issue #29537`_ for more information.
+
+.. _Issue #29537: https://github.com/saltstack/salt/issues/29537
+
+Based on the note above, to install an earlier version of pyVmomi than the
+version currently listed in PyPi, run the following:
+
+.. code-block:: bash
+
+    pip install pyVmomi==5.5.0.2014.1.1
+
+The 5.5.0.2014.1.1 is a known stable version that this original vSphere Execution
+Module was developed against.
+
+vSphere Automation SDK
+----------------------
+
+vSphere Automation SDK can be installed via pip:
+
+.. code-block:: bash
+
+    pip install --upgrade pip setuptools
+    pip install --upgrade git+https://github.com/vmware/vsphere-automation-sdk-python.git
+
+.. note::
+
+    The SDK also requires OpenSSL 1.0.1+ if you want to connect to vSphere 6.5+ in order to support
+    TLS1.1 & 1.2.
+
+    In order to use the tagging functions in this module, vSphere Automation SDK is necessary to
+    install.
+
+The module is currently in version 1.0.3
+(as of 8/26/2019)
+
+ESXCLI
+------
+
+Currently, about a third of the functions used in the vSphere Execution Module require
+the ESXCLI package be installed on the machine running the Proxy Minion process.
+
+The ESXCLI package is also referred to as the VMware vSphere CLI, or vCLI. VMware
+provides vCLI package installation instructions for `vSphere 5.5`_ and
+`vSphere 6.0`_.
+
+.. _vSphere 5.5: http://pubs.vmware.com/vsphere-55/index.jsp#com.vmware.vcli.getstart.doc/cli_install.4.2.html
+.. _vSphere 6.0: http://pubs.vmware.com/vsphere-60/index.jsp#com.vmware.vcli.getstart.doc/cli_install.4.2.html
+
+Once all of the required dependencies are in place and the vCLI package is
+installed, you can check to see if you can connect to your ESXi host or vCenter
+server by running the following command:
+
+.. code-block:: bash
+
+    esxcli -s <host-location> -u <username> -p <password> system syslog config get
+
+If the connection was successful, ESXCLI was successfully installed on your system.
+You should see output related to the ESXi host's syslog configuration.
+
+.. note::
+
+    Be aware that some functionality in this execution module may depend on the
+    type of license attached to a vCenter Server or ESXi host(s).
+
+    For example, certain services are only available to manipulate service state
+    or policies with a VMware vSphere Enterprise or Enterprise Plus license, while
+    others are available with a Standard license. The ``ntpd`` service is restricted
+    to an Enterprise Plus license, while ``ssh`` is available via the Standard
+    license.
+
+    Please see the `vSphere Comparison`_ page for more information.
+
+.. _vSphere Comparison: https://www.vmware.com/products/vsphere/compare
 
 
-@depends(HAS_PYVMOMI)
-def _get_service_instance():
-    """
-    Returns a service instance to the proxied endpoint (vCenter/ESXi host).
+About
+=====
 
-    Note:
-        Should be used by state functions not invoked directly.
+This execution module was designed to be able to handle connections both to a
+vCenter Server, as well as to an ESXi host. It utilizes the pyVmomi Python
+library and the ESXCLI package to run remote execution functions against either
+the defined vCenter server or the ESXi host.
 
-    CLI Example:
+Whether or not the function runs against a vCenter Server or an ESXi host depends
+entirely upon the arguments passed into the function. Each function requires a
+``host`` location, ``username``, and ``password``. If the credentials provided
+apply to a vCenter Server, then the function will be run against the vCenter
+Server. For example, when listing hosts using vCenter credentials, you'll get a
+list of hosts associated with that vCenter Server:
 
-        See note above
-    """
-    if salt.utils.platform.is_proxy():
-        return _get_service_instance_via_proxy
-    else:
-        return _get_service_instance_via_config
+.. code-block:: bash
 
+    # salt my-minion vsphere.list_hosts <vcenter-ip> <vcenter-user> <vcenter-password>
+    my-minion:
+    - esxi-1.example.com
+    - esxi-2.example.com
 
-@depends(HAS_PYVMOMI)
-def _get_service_instance_via_proxy():
-    """
-    Returns a service instance to the proxied endpoint (vCenter/ESXi host).
+However, some functions should be used against ESXi hosts, not vCenter Servers.
+Functionality such as getting a host's coredump network configuration should be
+performed against a host and not a vCenter server. If the authentication
+information you're using is against a vCenter server and not an ESXi host, you
+can provide the host name that is associated with the vCenter server in the
+command, as a list, using the ``host_names`` or ``esxi_host`` kwarg. For
+example:
 
-    Note:
-        Should be used by state functions not invoked directly.
+.. code-block:: bash
 
-    CLI Example:
+    # salt my-minion vsphere.get_coredump_network_config <vcenter-ip> <vcenter-user> \
+        <vcenter-password> esxi_hosts='[esxi-1.example.com, esxi-2.example.com]'
+    my-minion:
+    ----------
+        esxi-1.example.com:
+            ----------
+            Coredump Config:
+                ----------
+                enabled:
+                    False
+        esxi-2.example.com:
+            ----------
+            Coredump Config:
+                ----------
+                enabled:
+                    True
+                host_vnic:
+                    vmk0
+                ip:
+                    coredump-location.example.com
+                port:
+                    6500
 
-        See note above
-    """
-    connection_details = _get_proxy_connection_details()
-    return saltext.vmware.utils.vmware.get_service_instance(  # pylint: disable=no-value-for-parameter
-        *connection_details
+You can also use these functions against an ESXi host directly by establishing a
+connection to an ESXi host using the host's location, username, and password. If ESXi
+connection credentials are used instead of vCenter credentials, the ``host_names`` and
+``esxi_hosts`` arguments are not needed.
+
+.. code-block:: bash
+
+    # salt my-minion vsphere.get_coredump_network_config esxi-1.example.com root <host-password>
+    local:
+    ----------
+        10.4.28.150:
+            ----------
+            Coredump Config:
+                ----------
+                enabled:
+                    True
+                host_vnic:
+                    vmk0
+                ip:
+                    coredump-location.example.com
+                port:
+                    6500
+"""
+import logging
+import sys
+
+import salt.utils.platform
+import saltext.vmware.utils.vmware
+from salt.exceptions import InvalidConfigError
+from salt.utils.decorators import depends
+from salt.utils.dictdiffer import recursive_diff
+from salt.utils.listdiffer import list_diff
+from saltext.vmware.config.schemas.esxvm import ESXVirtualMachineDeleteSchema
+from saltext.vmware.config.schemas.esxvm import ESXVirtualMachineUnregisterSchema
+
+log = logging.getLogger(__name__)
+
+try:
+    import jsonschema
+
+    HAS_JSONSCHEMA = True
+except ImportError:
+    HAS_JSONSCHEMA = False
+
+try:
+    # pylint: disable=no-name-in-module
+    from pyVmomi import (
+        vim,
+        VmomiSupport,
     )
 
+    # pylint: enable=no-name-in-module
 
-@depends(HAS_PYVMOMI)
-def _get_service_instance_via_config():
-    """
-    Get the service instance using credentials from configuration or pillar.
-    """
-    vsphere_host = (
-        __salt__["config.get"]("vsphere.host")
-        or __salt__["config.get"]("vsphere:host")
-        or __salt__["pillar.get"]("vsphere.host")
-    )
+    # We check the supported vim versions to infer the pyVmomi version
+    if (
+        "vim25/6.0" in VmomiSupport.versionMap
+        and sys.version_info > (2, 7)
+        and sys.version_info < (2, 7, 9)
+    ):
 
-    vsphere_username = (
-        __salt__["config.get"]("vsphere.username")
-        or __salt__["config.get"]("vsphere:username")
-        or __salt__["pillar.get"]("vsphere.username")
-    )
+        log.debug("pyVmomi not loaded: Incompatible versions " "of Python. See Issue #29537.")
+        raise ImportError()
+    HAS_PYVMOMI = True
+except ImportError:
+    HAS_PYVMOMI = False
 
-    vsphere_password = (
-        __salt__["config.get"]("vsphere.password")
-        or __salt__["config.get"]("vsphere:password")
-        or __salt__["pillar.get"]("vsphere.password")
-    )
+__virtualname__ = "vmware_extra"
 
-    vsphere_protocol = (
-        __salt__["config.get"]("vsphere.protocol")
-        or __salt__["config.get"]("vsphere:protocol")
-        or __salt__["pillar.get"]("vsphere.protocol")
-    )
 
-    vsphere_port = (
-        __salt__["config.get"]("vsphere.port")
-        or __salt__["config.get"]("vsphere:port")
-        or __salt__["pillar.get"]("vsphere.port")
-    )
-
-    verify_ssl = (
-        __salt__["config.get"]("vsphere.verify_ssl")
-        or __salt__["config.get"]("vsphere:verify_ssl")
-        or __salt__["pillar.get"]("vsphere.verify_ssl")
-    )
-
-    return saltext.vmware.utils.vmware.get_service_instance(
-        host=vsphere_host,
-        username=vsphere_username,
-        password=vsphere_password,
-        protocol=vsphere_protocol,
-        port=vsphere_port,
-        verify_ssl=verify_ssl,
-    )
-
-def get_proxy_type():
-    """
-    Returns the proxy type retrieved either from the pillar of from the proxy
-    minion's config.  Returns ``<undefined>`` otherwise.
-
-    CLI Example:
-
-    .. code-block:: bash
-
-        salt '*' vsphere.get_proxy_type
-    """
-    if __pillar__.get("proxy", {}).get("proxytype"):
-        return __pillar__["proxy"]["proxytype"]
-    if __opts__.get("proxy", {}).get("proxytype"):
-        return __opts__["proxy"]["proxytype"]
-    return "<undefined>"
+def __virtual__():
+    return __virtualname__
 
 
 @ignores_kwargs("credstore")
@@ -2293,116 +2392,3 @@ def delete_advanced_configs(
     if removed_configs:
         salt.utils.vmware.update_vm(vm_ref, config_spec)
     return {"removed_configs": removed_configs}
-
-
-def _convert_units(devices):
-    """
-    Updates the size and unit dictionary values with the new unit values
-
-    devices
-        List of device data objects
-    """
-    if devices:
-        for device in devices:
-            if "unit" in device and "size" in device:
-                device.update(
-                    salt.utils.vmware.convert_to_kb(device["unit"], device["size"])
-                )
-    else:
-        return False
-    return True
-
-
-def compare_vm_configs(new_config, current_config):
-    """
-    Compares virtual machine current and new configuration, the current is the
-    one which is deployed now, and the new is the target config. Returns the
-    differences between the objects in a dictionary, the keys are the
-    configuration parameter keys and the values are differences objects: either
-    list or recursive difference
-
-    new_config:
-        New config dictionary with every available parameter
-
-    current_config
-        Currently deployed configuration
-    """
-    diffs = {}
-    keys = set(new_config.keys())
-
-    # These values identify the virtual machine, comparison is unnecessary
-    keys.discard("name")
-    keys.discard("datacenter")
-    keys.discard("datastore")
-    for property_key in ("version", "image"):
-        if property_key in keys:
-            single_value_diff = recursive_diff(
-                {property_key: current_config[property_key]},
-                {property_key: new_config[property_key]},
-            )
-            if single_value_diff.diffs:
-                diffs[property_key] = single_value_diff
-            keys.discard(property_key)
-
-    if "cpu" in keys:
-        keys.remove("cpu")
-        cpu_diff = recursive_diff(current_config["cpu"], new_config["cpu"])
-        if cpu_diff.diffs:
-            diffs["cpu"] = cpu_diff
-
-    if "memory" in keys:
-        keys.remove("memory")
-        _convert_units([current_config["memory"]])
-        _convert_units([new_config["memory"]])
-        memory_diff = recursive_diff(current_config["memory"], new_config["memory"])
-        if memory_diff.diffs:
-            diffs["memory"] = memory_diff
-
-    if "advanced_configs" in keys:
-        keys.remove("advanced_configs")
-        key = "advanced_configs"
-        advanced_diff = recursive_diff(current_config[key], new_config[key])
-        if advanced_diff.diffs:
-            diffs[key] = advanced_diff
-
-    if "disks" in keys:
-        keys.remove("disks")
-        _convert_units(current_config["disks"])
-        _convert_units(new_config["disks"])
-        disk_diffs = list_diff(current_config["disks"], new_config["disks"], "address")
-        # REMOVE UNSUPPORTED DIFFERENCES/CHANGES
-        # If the disk already exist, the backing properties like eagerly scrub
-        # and thin provisioning
-        # cannot be updated, and should not be identified as differences
-        disk_diffs.remove_diff(diff_key="eagerly_scrub")
-        # Filename updates are not supported yet, on VSAN datastores the
-        # backing.fileName points to a uid + the vmdk name
-        disk_diffs.remove_diff(diff_key="filename")
-        # The adapter name shouldn't be changed
-        disk_diffs.remove_diff(diff_key="adapter")
-        if disk_diffs.diffs:
-            diffs["disks"] = disk_diffs
-
-    if "interfaces" in keys:
-        keys.remove("interfaces")
-        interface_diffs = list_diff(
-            current_config["interfaces"], new_config["interfaces"], "mac"
-        )
-        # The adapter name shouldn't be changed
-        interface_diffs.remove_diff(diff_key="adapter")
-        if interface_diffs.diffs:
-            diffs["interfaces"] = interface_diffs
-
-    # For general items where the identification can be done by adapter
-    for key in keys:
-        if key not in current_config or key not in new_config:
-            raise ValueError(
-                "A general device {} configuration was "
-                "not supplied or it was not retrieved from "
-                "remote configuration".format(key)
-            )
-        device_diffs = list_diff(current_config[key], new_config[key], "adapter")
-        if device_diffs.diffs:
-            diffs[key] = device_diffs
-
-    return diffs
