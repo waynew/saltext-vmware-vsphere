@@ -7,8 +7,11 @@
 
     VCenter configuration schemas
 """
-
-from salt.utils.schema import ArrayItem, BooleanItem, IntegerItem, Schema, StringItem
+from salt.utils.schema import ArrayItem
+from salt.utils.schema import BooleanItem
+from salt.utils.schema import IntegerItem
+from salt.utils.schema import Schema
+from salt.utils.schema import StringItem
 
 
 class VCenterEntitySchema(Schema):

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
     :codeauthor: :email:`Agnes Tevesz (agnes.tevesz@morganstanley.com)`
 
@@ -7,22 +6,16 @@
 
     ESX Virtual Machine configuration schemas
 """
-
-# Import Python libs
-from __future__ import absolute_import, print_function, unicode_literals
-
-from salt.utils.schema import (
-    AnyOfItem,
-    ArrayItem,
-    BooleanItem,
-    ComplexSchemaItem,
-    DefinitionsSchema,
-    IntegerItem,
-    IPv4Item,
-    NullItem,
-    NumberItem,
-    StringItem,
-)
+from salt.utils.schema import AnyOfItem
+from salt.utils.schema import ArrayItem
+from salt.utils.schema import BooleanItem
+from salt.utils.schema import ComplexSchemaItem
+from salt.utils.schema import DefinitionsSchema
+from salt.utils.schema import IntegerItem
+from salt.utils.schema import IPv4Item
+from salt.utils.schema import NullItem
+from salt.utils.schema import NumberItem
+from salt.utils.schema import StringItem
 
 
 class ESXVirtualMachineSerialBackingItem(ComplexSchemaItem):
@@ -217,13 +210,10 @@ class ESXVirtualMachineDiskSchemaItem(ComplexSchemaItem):
     description = "ESX virtual machine disk properties"
     required = True
 
-    size = NumberItem(
-        title="Disk size", description="Size of the disk in GB", required=True
-    )
+    size = NumberItem(title="Disk size", description="Size of the disk in GB", required=True)
     unit = StringItem(
         title="Disk size unit",
-        description="Unit of the disk size, to VMware a "
-        "GB is the same as GiB = 1024MiB",
+        description="Unit of the disk size, to VMware a " "GB is the same as GiB = 1024MiB",
         required=False,
         default="GB",
         enum=("KB", "MB", "GB"),
@@ -330,14 +320,11 @@ class ESXVirtualMachineMemorySchemaItem(ComplexSchemaItem):
     description = "ESX Virtual Machine memory property"
     required = True
 
-    size = IntegerItem(
-        title="Memory size", description="Size of the memory", required=True
-    )
+    size = IntegerItem(title="Memory size", description="Size of the memory", required=True)
 
     unit = StringItem(
         title="Memory unit",
-        description="Unit of the memory, to VMware a "
-        "GB is the same as GiB = 1024MiB",
+        description="Unit of the memory, to VMware a " "GB is the same as GiB = 1024MiB",
         required=False,
         default="MB",
         enum=("MB", "GB"),
@@ -355,9 +342,7 @@ class ESXVirtualMachineCpuSchemaItem(ComplexSchemaItem):
     description = "ESX Virtual Machine memory property"
     required = True
 
-    count = IntegerItem(
-        title="CPU core count", description="CPU core count", required=True
-    )
+    count = IntegerItem(title="CPU core count", description="CPU core count", required=True)
     cores_per_socket = IntegerItem(
         title="CPU cores per socket",
         description="CPU cores per socket count",
@@ -393,9 +378,7 @@ class ESXVirtualMachineConfigSchema(DefinitionsSchema):
     )
     cpu = ESXVirtualMachineCpuSchemaItem()
     memory = ESXVirtualMachineMemorySchemaItem()
-    image = StringItem(
-        title="Virtual Machine guest OS", description="Guest OS type", required=True
-    )
+    image = StringItem(title="Virtual Machine guest OS", description="Guest OS type", required=True)
     version = StringItem(
         title="Virtual Machine hardware version",
         description="Container hardware version property",

@@ -316,9 +316,7 @@ def upload_ssh_key(
 
 
 @ignores_kwargs("credstore")
-def get_ssh_key(
-    host, username, password, protocol=None, port=None, certificate_verify=None
-):
+def get_ssh_key(host, username, password, protocol=None, port=None, certificate_verify=None):
     """
     Retrieve the authorized_keys entry for root.
     This function only works for ESXi, not vCenter.
@@ -528,7 +526,12 @@ def test_vcenter_connection(service_instance=None):
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
 def system_info(
-    host, username, password, protocol=None, port=None, verify_ssl=True,
+    host,
+    username,
+    password,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Return system information about a VMware environment.
@@ -570,12 +573,8 @@ def system_info(
     ret = salt.utils.vmware.get_inventory(service_instance).about.__dict__
     if "apiType" in ret:
         if ret["apiType"] == "HostAgent":
-            ret = dictupdate.update(
-                ret, salt.utils.vmware.get_hardware_grains(service_instance)
-            )
+            ret = dictupdate.update(ret, salt.utils.vmware.get_hardware_grains(service_instance))
     return ret
-
-
 
 
 @depends(HAS_PYVMOMI)
@@ -623,9 +622,7 @@ def list_hosts(host, username, password, protocol=None, port=None, verify_ssl=Tr
 
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
-def list_resourcepools(
-    host, username, password, protocol=None, port=None, verify_ssl=True
-):
+def list_resourcepools(host, username, password, protocol=None, port=None, verify_ssl=True):
     """
     Returns a list of resource pools for the specified host.
 
@@ -798,9 +795,7 @@ def list_vapps(host, username, password, protocol=None, port=None, verify_ssl=Tr
 
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
-def list_ssds(
-    host, username, password, protocol=None, port=None, host_names=None, verify_ssl=True
-):
+def list_ssds(host, username, password, protocol=None, port=None, host_names=None, verify_ssl=True):
     """
     Returns a list of SSDs for the given host or list of host_names.
 
@@ -1022,9 +1017,7 @@ def set_ntp_config(
     for host_name in host_names:
         host_ref = _get_host_ref(service_instance, host, host_name=host_name)
         date_time_manager = _get_date_time_mgr(host_ref)
-        log.debug(
-            "Configuring NTP Servers '{}' for host '{}'.".format(ntp_servers, host_name)
-        )
+        log.debug("Configuring NTP Servers '{}' for host '{}'.".format(ntp_servers, host_name))
 
         try:
             date_time_manager.UpdateDateTimeConfig(config=date_config)
@@ -1103,9 +1096,7 @@ def update_host_datetime(
         try:
             date_time_manager.UpdateDateTime(datetime.datetime.utcnow())
         except vim.fault.HostConfigFault as err:
-            msg = "'vsphere.update_date_time' failed for host {}: {}".format(
-                host_name, err
-            )
+            msg = "'vsphere.update_date_time' failed for host {}: {}".format(host_name, err)
             log.debug(msg)
             ret.update({host_name: {"Error": msg}})
             continue
@@ -1178,8 +1169,7 @@ def update_host_password(
         raise CommandExecutionError(err.msg)
     except vim.fault.UserNotFound:
         raise CommandExecutionError(
-            "'vsphere.update_host_password' failed for host {}: "
-            "User was not found.".format(host)
+            "'vsphere.update_host_password' failed for host {}: " "User was not found.".format(host)
         )
     # If the username and password already exist, we don't need to do anything.
     except vim.fault.AlreadyExists:
@@ -1211,9 +1201,7 @@ def list_storage_policies(policy_names=None, service_instance=None):
     """
     profile_manager = salt.utils.pbm.get_profile_manager(service_instance)
     if not policy_names:
-        policies = salt.utils.pbm.get_storage_policies(
-            profile_manager, get_all_policies=True
-        )
+        policies = salt.utils.pbm.get_storage_policies(profile_manager, get_all_policies=True)
     else:
         policies = salt.utils.pbm.get_storage_policies(profile_manager, policy_names)
     return [_get_policy_dict(p) for p in policies]
@@ -1237,12 +1225,8 @@ def list_default_vsan_policy(service_instance=None):
         salt '*' vsphere.list_storage_policy policy_names=[policy_name]
     """
     profile_manager = salt.utils.pbm.get_profile_manager(service_instance)
-    policies = salt.utils.pbm.get_storage_policies(
-        profile_manager, get_all_policies=True
-    )
-    def_policies = [
-        p for p in policies if p.systemCreatedProfileType == "VsanDefaultProfile"
-    ]
+    policies = salt.utils.pbm.get_storage_policies(profile_manager, get_all_policies=True)
+    def_policies = [p for p in policies if p.systemCreatedProfileType == "VsanDefaultProfile"]
     if not def_policies:
         raise VMwareObjectRetrievalError("Default VSAN policy was not " "retrieved")
     return _get_policy_dict(def_policies[0])
@@ -1321,9 +1305,7 @@ def _apply_policy_config(policy_spec, policy_dict):
                         id=cap_dict["id"], namespace=cap_dict["namespace"]
                     ),
                     constraint=[
-                        pbm.capability.ConstraintInstance(
-                            propertyInstance=[prop_inst_spec]
-                        )
+                        pbm.capability.ConstraintInstance(propertyInstance=[prop_inst_spec])
                     ],
                 )
                 cap_specs.append(cap_spec)
@@ -1361,9 +1343,7 @@ def create_storage_policy(policy_name, policy_dict, service_instance=None):
         salt '*' vsphere.create_storage_policy policy_name='policy name'
             policy_dict="$policy_dict"
     """
-    log.trace(
-        "create storage policy '{}', dict = {}" "".format(policy_name, policy_dict)
-    )
+    log.trace("create storage policy '{}', dict = {}" "".format(policy_name, policy_dict))
     profile_manager = salt.utils.pbm.get_profile_manager(service_instance)
     policy_create_spec = pbm.profile.CapabilityBasedProfileCreateSpec()
     # Hardcode the storage profile resource type
@@ -1414,9 +1394,7 @@ def update_storage_policy(policy, policy_dict, service_instance=None):
     for prop in ["description", "constraints"]:
         setattr(policy_update_spec, prop, getattr(policy_ref, prop))
     _apply_policy_config(policy_update_spec, policy_dict)
-    salt.utils.pbm.update_storage_policy(
-        profile_manager, policy_ref, policy_update_spec
-    )
+    salt.utils.pbm.update_storage_policy(profile_manager, policy_ref, policy_update_spec)
     return {"update_storage_policy": True}
 
 
@@ -1432,9 +1410,7 @@ def _get_cluster_dict(cluster_name, cluster_ref):
         Reference to the cluster
     """
 
-    log.trace(
-        "Building a dictionary representation of cluster " "'{}'".format(cluster_name)
-    )
+    log.trace("Building a dictionary representation of cluster " "'{}'".format(cluster_name))
     props = salt.utils.vmware.get_properties_of_managed_object(
         cluster_ref, properties=["configurationEx"]
     )
@@ -1465,9 +1441,7 @@ def _get_cluster_dict(cluster_name, cluster_ref):
     if ha_conf.hostMonitoring:
         res["ha"]["host_monitoring"] = ha_conf.hostMonitoring
     if ha_conf.option:
-        res["ha"]["options"] = [
-            {"key": o.key, "value": o.value} for o in ha_conf.option
-        ]
+        res["ha"]["options"] = [{"key": o.key, "value": o.value} for o in ha_conf.option]
     res["ha"]["vm_monitoring"] = ha_conf.vmMonitoring
     # Convert DRS properties
     drs_conf = props["configurationEx"].drsConfig
@@ -1510,7 +1484,6 @@ def _get_cluster_dict(cluster_name, cluster_ref):
     return res
 
 
-
 def _apply_cluster_dict(cluster_spec, cluster_dict, vsan_spec=None, vsan_61=True):
     """
     Applies the values of cluster_dict dictionary to a cluster spec
@@ -1543,24 +1516,20 @@ def _apply_cluster_dict(cluster_spec, cluster_dict, vsan_spec=None, vsan_61=True
                 vim.ClusterFailoverResourcesAdmissionControlPolicy,
             ):
 
-                das_config.admissionControlPolicy = vim.ClusterFailoverResourcesAdmissionControlPolicy(
-                    cpuFailoverResourcesPercent=adm_pol_dict["cpu_failover_percent"],
-                    memoryFailoverResourcesPercent=adm_pol_dict[
-                        "memory_failover_percent"
-                    ],
+                das_config.admissionControlPolicy = (
+                    vim.ClusterFailoverResourcesAdmissionControlPolicy(
+                        cpuFailoverResourcesPercent=adm_pol_dict["cpu_failover_percent"],
+                        memoryFailoverResourcesPercent=adm_pol_dict["memory_failover_percent"],
+                    )
                 )
         if "default_vm_settings" in ha_dict:
             vm_set_dict = ha_dict["default_vm_settings"]
             if not das_config.defaultVmSettings:
                 das_config.defaultVmSettings = vim.ClusterDasVmSettings()
             if "isolation_response" in vm_set_dict:
-                das_config.defaultVmSettings.isolationResponse = vm_set_dict[
-                    "isolation_response"
-                ]
+                das_config.defaultVmSettings.isolationResponse = vm_set_dict["isolation_response"]
             if "restart_priority" in vm_set_dict:
-                das_config.defaultVmSettings.restartPriority = vm_set_dict[
-                    "restart_priority"
-                ]
+                das_config.defaultVmSettings.restartPriority = vm_set_dict["restart_priority"]
         if "hb_ds_candidate_policy" in ha_dict:
             das_config.hBDatastoreCandidatePolicy = ha_dict["hb_ds_candidate_policy"]
         if "host_monitoring" in ha_dict:
@@ -1582,9 +1551,7 @@ def _apply_cluster_dict(cluster_spec, cluster_dict, vsan_spec=None, vsan_61=True
         if "vmotion_rate" in drs_dict:
             drs_config.vmotionRate = 6 - drs_dict["vmotion_rate"]
         if "default_vm_behavior" in drs_dict:
-            drs_config.defaultVmBehavior = vim.DrsBehavior(
-                drs_dict["default_vm_behavior"]
-            )
+            drs_config.defaultVmBehavior = vim.DrsBehavior(drs_dict["default_vm_behavior"])
         cluster_spec.drsConfig = drs_config
     if cluster_dict.get("vm_swap_placement"):
         cluster_spec.vmSwapPlacement = cluster_dict["vm_swap_placement"]
@@ -1611,9 +1578,7 @@ def _apply_cluster_dict(cluster_spec, cluster_dict, vsan_spec=None, vsan_61=True
             if "compression_enabled" in vsan_dict:
                 if not vsan_spec.dataEfficiencyConfig:
                     vsan_spec.dataEfficiencyConfig = vim.vsan.DataEfficiencyConfig()
-                vsan_spec.dataEfficiencyConfig.compressionEnabled = vsan_dict[
-                    "compression_enabled"
-                ]
+                vsan_spec.dataEfficiencyConfig.compressionEnabled = vsan_dict["compression_enabled"]
             if "dedup_enabled" in vsan_dict:
                 if not vsan_spec.dataEfficiencyConfig:
                     vsan_spec.dataEfficiencyConfig = vim.vsan.DataEfficiencyConfig()
@@ -1662,9 +1627,7 @@ def _get_entity(service_instance, entity):
 
     log.trace("Retrieving entity: {}".format(entity))
     if entity["type"] == "cluster":
-        dc_ref = salt.utils.vmware.get_datacenter(
-            service_instance, entity["datacenter"]
-        )
+        dc_ref = salt.utils.vmware.get_datacenter(service_instance, entity["datacenter"])
         return salt.utils.vmware.get_cluster(dc_ref, entity["cluster"])
     elif entity["type"] == "vcenter":
         return None
@@ -1686,22 +1649,17 @@ def _validate_entity(entity):
     elif entity["type"] == "vcenter":
         schema = VCenterEntitySchema.serialize()
     else:
-        raise ArgumentValueError(
-            "Unsupported entity type '{}'" "".format(entity["type"])
-        )
+        raise ArgumentValueError("Unsupported entity type '{}'" "".format(entity["type"]))
     try:
         jsonschema.validate(entity, schema)
     except jsonschema.exceptions.ValidationError as exc:
         raise InvalidEntityError(exc)
 
 
-
 @depends(HAS_PYVMOMI)
 @_supports_proxies("esxi", "esxcluster", "esxdatacenter", "vcenter")
 @_gets_service_instance_via_proxy
-def list_hosts_via_proxy(
-    hostnames=None, datacenter=None, cluster=None, service_instance=None
-):
+def list_hosts_via_proxy(hostnames=None, datacenter=None, cluster=None, service_instance=None):
     """
     Returns a list of hosts for the specified VMware environment. The list
     of hosts can be filtered by datacenter name and/or cluster name
@@ -1754,9 +1712,7 @@ def list_hosts_via_proxy(
 @depends(HAS_JSONSCHEMA)
 @_supports_proxies("esxi")
 @_gets_service_instance_via_proxy
-def configure_host_cache(
-    enabled, datastore=None, swap_size_MiB=None, service_instance=None
-):
+def configure_host_cache(enabled, datastore=None, swap_size_MiB=None, service_instance=None):
     """
     Configures the host cache on the selected host.
 
@@ -1807,8 +1763,7 @@ def configure_host_cache(
         )
         if not ds_refs:
             raise VMwareObjectRetrievalError(
-                "Datastore '{}' was not found on host "
-                "'{}'".format(datastore, hostname)
+                "Datastore '{}' was not found on host " "'{}'".format(datastore, hostname)
             )
         ds_ref = ds_refs[0]
     salt.utils.vmware.configure_host_cache(host_ref, ds_ref, swap_size_MiB)
@@ -1950,9 +1905,7 @@ def _get_vsan_eligible_disks(service_instance, host, host_names):
         # No suitable disks were found to add. Warn and move on.
         # This isn't an error as the state may run repeatedly after all eligible disks are added.
         if not suitable_disks:
-            msg = "The host '{}' does not have any VSAN eligible disks.".format(
-                host_name
-            )
+            msg = "The host '{}' does not have any VSAN eligible disks.".format(host_name)
             log.warning(msg)
             ret.update({host_name: {"Eligible": msg}})
             continue
@@ -2014,9 +1967,7 @@ def _reset_syslog_config_params(
             all_success = False
             ret_dict[reset_param] = {}
             ret_dict[reset_param]["success"] = False
-            ret_dict[reset_param]["message"] = (
-                "Invalid syslog " "configuration parameter"
-            )
+            ret_dict[reset_param]["message"] = "Invalid syslog " "configuration parameter"
 
     ret_dict["success"] = all_success
 
@@ -2071,9 +2022,7 @@ def _set_syslog_config_helper(
 
     # Update the return dictionary for success or error messages.
     if response["retcode"] != 0:
-        ret_dict.update(
-            {syslog_config: {"success": False, "message": response["stdout"]}}
-        )
+        ret_dict.update({syslog_config: {"success": False, "message": response["stdout"]}})
     else:
         ret_dict.update({syslog_config: {"success": True}})
 
@@ -2156,9 +2105,7 @@ def _get_proxy_target(service_instance):
             raise InvalidEntityError(
                 "Proxies connected directly to ESXi " "hosts are not supported"
             )
-        references = salt.utils.vmware.get_hosts(
-            service_instance, host_names=details["esxi_host"]
-        )
+        references = salt.utils.vmware.get_hosts(service_instance, host_names=details["esxi_host"])
         if not references:
             raise VMwareObjectRetrievalError(
                 "ESXi host '{}' was not found".format(details["esxi_host"])
@@ -2264,9 +2211,7 @@ def _apply_advanced_config(config_spec, advanced_config, vm_extra_config=None):
     vm_extra_config
         Virtual machine vm_ref.config.extraConfig object
     """
-    log.trace(
-        "Configuring advanced configuration " "parameters {}".format(advanced_config)
-    )
+    log.trace("Configuring advanced configuration " "parameters {}".format(advanced_config))
     if isinstance(advanced_config, str):
         raise salt.exceptions.ArgumentValueError(
             "The specified 'advanced_configs' configuration "
@@ -2338,9 +2283,7 @@ def _delete_advanced_config(config_spec, advanced_config, vm_extra_config):
     vm_extra_config
         Virtual machine vm_ref.config.extraConfig object
     """
-    log.trace(
-        "Removing advanced configuration " "parameters {}".format(advanced_config)
-    )
+    log.trace("Removing advanced configuration " "parameters {}".format(advanced_config))
     if isinstance(advanced_config, str):
         raise salt.exceptions.ArgumentValueError(
             "The specified 'advanced_configs' configuration "
@@ -2359,9 +2302,7 @@ def _delete_advanced_config(config_spec, advanced_config, vm_extra_config):
 @depends(HAS_PYVMOMI)
 @_supports_proxies("esxvm", "esxcluster", "esxdatacenter")
 @_gets_service_instance_via_proxy
-def delete_advanced_configs(
-    vm_name, datacenter, advanced_configs, service_instance=None
-):
+def delete_advanced_configs(vm_name, datacenter, advanced_configs, service_instance=None):
     """
     Removes extra config parameters from a virtual machine
 

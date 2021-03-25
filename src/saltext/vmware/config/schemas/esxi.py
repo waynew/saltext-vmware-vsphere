@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
     :codeauthor: :email:`Alexandru Bleotu (alexandru.bleotu@morganstanley.com)`
 
@@ -8,24 +7,21 @@
 
     ESXi host configuration schemas
 """
-
-# Import Python libs
-from __future__ import absolute_import, print_function, unicode_literals
-
-# Import Salt libs
-from salt.utils.schema import (
-    ArrayItem,
-    BooleanItem,
-    ComplexSchemaItem,
-    DefinitionsSchema,
-    IntegerItem,
-    OneOfItem,
-    Schema,
-    StringItem,
-)
+from salt.utils.schema import ArrayItem
+from salt.utils.schema import BooleanItem
+from salt.utils.schema import ComplexSchemaItem
+from salt.utils.schema import DefinitionsSchema
+from salt.utils.schema import IntegerItem
+from salt.utils.schema import OneOfItem
+from salt.utils.schema import Schema
+from salt.utils.schema import StringItem
 
 
 class VMwareScsiAddressItem(StringItem):
+    """
+    Schema item of a VMware SCSI Address item
+    """
+
     pattern = r"vmhba\d+:C\d+:T\d+:L\d+"
 
 
@@ -124,9 +120,7 @@ class VmfsDatastoreDiskIdItem(ComplexSchemaItem):
         pattern=r"[^\s]+",
         required=True,
     )
-    vmfs_version = IntegerItem(
-        title="VMFS Version", description="VMFS version", enum=[1, 2, 3, 5]
-    )
+    vmfs_version = IntegerItem(title="VMFS Version", description="VMFS version", enum=[1, 2, 3, 5])
 
 
 class VmfsDatastoreDiskScsiAddressItem(ComplexSchemaItem):
@@ -143,14 +137,10 @@ class VmfsDatastoreDiskScsiAddressItem(ComplexSchemaItem):
     )
     backing_disk_scsi_addr = VMwareScsiAddressItem(
         title="Backing Disk Scsi Address",
-        description=(
-            "Specifies the SCSI address of the disk backing the VMFS " "datastore"
-        ),
+        description=("Specifies the SCSI address of the disk backing the VMFS " "datastore"),
         required=True,
     )
-    vmfs_version = IntegerItem(
-        title="VMFS Version", description="VMFS version", enum=[1, 2, 3, 5]
-    )
+    vmfs_version = IntegerItem(title="VMFS Version", description="VMFS version", enum=[1, 2, 3, 5])
 
 
 class VmfsDatastoreSchema(DefinitionsSchema):
@@ -211,7 +201,7 @@ class EsxiProxySchema(Schema):
     passwords = ArrayItem(min_items=1, items=StringItem(), unique_items=True)
     mechanism = StringItem(enum=["userpass", "sspi"])
     verify_ssl = BooleanItem()
-    # TODO Should be changed when anyOf is supported for schemas
+    # TODO Should be changed when anyOf is supported for schemas  # pylint: disable=W0511
     domain = StringItem()
     principal = StringItem()
     protocol = StringItem()

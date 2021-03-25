@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
     :codeauthor: :email:`Alexandru Bleotu (alexandru.bleotu@morganstanley.com)`
 
@@ -8,22 +7,15 @@
 
     ESX Cluster configuration schemas
 """
-
-# Import Python libs
-from __future__ import absolute_import, print_function, unicode_literals
-
-# Import Salt libs
-from salt.utils.schema import (
-    AnyOfItem,
-    ArrayItem,
-    BooleanItem,
-    ComplexSchemaItem,
-    DefinitionsSchema,
-    DictItem,
-    IntegerItem,
-    Schema,
-    StringItem,
-)
+from salt.utils.schema import AnyOfItem
+from salt.utils.schema import ArrayItem
+from salt.utils.schema import BooleanItem
+from salt.utils.schema import ComplexSchemaItem
+from salt.utils.schema import DefinitionsSchema
+from salt.utils.schema import DictItem
+from salt.utils.schema import IntegerItem
+from salt.utils.schema import Schema
+from salt.utils.schema import StringItem
 
 
 class OptionValueItem(ComplexSchemaItem):
@@ -41,12 +33,8 @@ class AdmissionControlPolicyItem(ComplexSchemaItem):
 
     title = "Admission Control Policy"
 
-    cpu_failover_percent = IntegerItem(
-        title="CPU Failover Percent", minimum=0, maximum=100
-    )
-    memory_failover_percent = IntegerItem(
-        title="Memory Failover Percent", minimum=0, maximum=100
-    )
+    cpu_failover_percent = IntegerItem(title="CPU Failover Percent", minimum=0, maximum=100)
+    memory_failover_percent = IntegerItem(title="Memory Failover Percent", minimum=0, maximum=100)
 
 
 class DefaultVmSettingsItem(ComplexSchemaItem):
@@ -74,9 +62,7 @@ class HAConfigItem(ComplexSchemaItem):
     title = "HA Configuration"
     description = "ESX cluster HA configuration json schema item"
 
-    enabled = BooleanItem(
-        title="Enabled", description="Specifies if HA should be enabled"
-    )
+    enabled = BooleanItem(title="Enabled", description="Specifies if HA should be enabled")
     admission_control_enabled = BooleanItem(title="Admission Control Enabled")
     admission_control_policy = AdmissionControlPolicyItem()
     default_vm_settings = DefaultVmSettingsItem()
@@ -84,9 +70,7 @@ class HAConfigItem(ComplexSchemaItem):
         title="Heartbeat Datastore Candidate Policy",
         enum=["allFeasibleDs", "allFeasibleDsWithUserPreference", "userSelectedDs"],
     )
-    host_monitoring = StringItem(
-        title="Host Monitoring", choices=["enabled", "disabled"]
-    )
+    host_monitoring = StringItem(title="Host Monitoring", choices=["enabled", "disabled"])
     options = ArrayItem(min_items=1, items=OptionValueItem())
     vm_monitoring = StringItem(
         title="Vm Monitoring",
@@ -94,7 +78,7 @@ class HAConfigItem(ComplexSchemaItem):
     )
 
 
-class vSANClusterConfigItem(ComplexSchemaItem):
+class VSANClusterConfigItem(ComplexSchemaItem):
     """
     Schema item of the ESX cluster vSAN configuration
     """
@@ -102,17 +86,13 @@ class vSANClusterConfigItem(ComplexSchemaItem):
     title = "vSAN Configuration"
     description = "ESX cluster vSAN configurationi item"
 
-    enabled = BooleanItem(
-        title="Enabled", description="Specifies if vSAN should be enabled"
-    )
+    enabled = BooleanItem(title="Enabled", description="Specifies if vSAN should be enabled")
     auto_claim_storage = BooleanItem(
         title="Auto Claim Storage",
         description="Specifies whether the storage of member ESXi hosts should "
         "be automatically claimed for vSAN",
     )
-    dedup_enabled = BooleanItem(
-        title="Enabled", description="Specifies dedup should be enabled"
-    )
+    dedup_enabled = BooleanItem(title="Enabled", description="Specifies dedup should be enabled")
     compression_enabled = BooleanItem(
         title="Enabled", description="Specifies if compression should be enabled"
     )
@@ -126,9 +106,7 @@ class DRSConfigItem(ComplexSchemaItem):
     title = "DRS Configuration"
     description = "ESX cluster DRS configuration item"
 
-    enabled = BooleanItem(
-        title="Enabled", description="Specifies if DRS should be enabled"
-    )
+    enabled = BooleanItem(title="Enabled", description="Specifies if DRS should be enabled")
     vmotion_rate = IntegerItem(
         title="vMotion rate",
         description="Aggressiveness to do automatic vMotions: "
@@ -151,8 +129,8 @@ class ESXClusterConfigSchema(DefinitionsSchema):
     title = "ESX Cluster Configuration Schema"
     description = "ESX cluster configuration schema"
 
-    ha = HAConfigItem()
-    vsan = vSANClusterConfigItem()
+    ha_item = HAConfigItem()
+    vsan = VSANClusterConfigItem()
     drs = DRSConfigItem()
     vm_swap_placement = StringItem(title="VM Swap Placement")
 
@@ -220,7 +198,7 @@ class EsxclusterProxySchema(Schema):
     mechanism = StringItem(required=True, enum=["userpass", "sspi"])
     username = StringItem()
     passwords = ArrayItem(min_items=1, items=StringItem(), unique_items=True)
-    # TODO Should be changed when anyOf is supported for schemas
+    # TODO Should be changed when anyOf is supported for schemas  # pylint: disable=W0511
     domain = StringItem()
     principal = StringItem()
     protocol = StringItem()
