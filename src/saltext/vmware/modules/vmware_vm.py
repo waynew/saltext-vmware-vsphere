@@ -1,6 +1,7 @@
 import logging
 import sys
 
+import salt.utils.platform
 import saltext.vmware.utils.vmware
 
 from salt.utils.decorators import depends, ignores_kwargs
@@ -1397,7 +1398,17 @@ def _delete_device(device):
 
 
 @depends(HAS_PYVMOMI)
-def power_on_vm(name, datacenter=None, **kwargs):
+def power_on_vm(
+        name,
+        datacenter=None,
+        host=None,
+        vcenter=None,
+        username=None,
+        password=None,
+        protocol=None,
+        port=None,
+        verify_ssl=True,
+):
     """
     Powers on a virtual machine specified by its name.
 
@@ -1407,9 +1418,28 @@ def power_on_vm(name, datacenter=None, **kwargs):
     datacenter
         Datacenter of the virtual machine
 
-    service_instance
-        Service instance (vim.ServiceInstance) of the vCenter.
-        Default is None.
+    host
+        The location of the host if using ESXI.
+
+    vcenter
+        The location of the host if using VCenter.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
 
     .. code-block:: bash
 
@@ -1417,9 +1447,16 @@ def power_on_vm(name, datacenter=None, **kwargs):
 
     """
     if salt.utils.platform.is_proxy():
-        service_instance = _get_service_instance_via_proxy()
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        service_instance = _get_service_instance()
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     log.trace("Powering on virtual machine {}".format(name))
     vm_properties = ["name", "summary.runtime.powerState"]
@@ -1444,7 +1481,17 @@ def power_on_vm(name, datacenter=None, **kwargs):
 
 
 @depends(HAS_PYVMOMI)
-def power_off_vm(name, datacenter=None):
+def power_off_vm(
+        name,
+        datacenter=None,
+        host=None,
+        vcenter=None,
+        username=None,
+        password=None,
+        protocol=None,
+        port=None,
+        verify_ssl=True,
+):
     """
     Powers off a virtual machine specified by its name.
 
@@ -1454,9 +1501,28 @@ def power_off_vm(name, datacenter=None):
     datacenter
         Datacenter of the virtual machine
 
-    service_instance
-        Service instance (vim.ServiceInstance) of the vCenter.
-        Default is None.
+    host
+        The location of the host if using ESXI.
+
+    vcenter
+        The location of the host if using VCenter.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
 
     .. code-block:: bash
 
@@ -1464,9 +1530,16 @@ def power_off_vm(name, datacenter=None):
 
     """
     if salt.utils.platform.is_proxy():
-        service_instance = _get_service_instance_via_proxy()
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        service_instance = _get_service_instance()
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     log.trace("Powering off virtual machine {}".format(name))
     vm_properties = ["name", "summary.runtime.powerState"]
@@ -1490,12 +1563,21 @@ def power_off_vm(name, datacenter=None):
     return result
 
 @depends(HAS_PYVMOMI)
-def list_vms():
+def list_vms(host=None,
+             vcenter=None,
+             username=None,
+             password=None,
+             protocol=None,
+             port=None,
+             verify_ssl=True):
     """
     Returns a list of VMs for the specified host.
 
     host
-        The location of the host.
+        The location of the host if using ESXI.
+
+    vcenter
+        The location of the host if using VCenter.
 
     username
         The username used to login to the host, such as ``root``.
@@ -1518,17 +1600,34 @@ def list_vms():
 
     .. code-block:: bash
 
-        salt '*' vsphere.list_vms 1.2.3.4 root bad-password
+        salt '*' vsphere.list_vms host=1.2.3.4 username=root password=bad-password
     """
     if salt.utils.platform.is_proxy():
-        service_instance = _get_service_instance_via_proxy()
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        service_instance = _get_service_instance()
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     return saltext.vmware.utils.vmware.list_vms(service_instance)
 
 @depends(HAS_PYVMOMI)
-def delete_vm(name, datacenter, placement=None, power_off=False):
+def delete_vm(name,
+              datacenter,
+              placement=None,
+              power_off=False,
+              host=None,
+              vcenter=None,
+              username=None,
+              password=None,
+              protocol=None,
+              port=None,
+              verify_ssl=True):
     """
     Deletes a virtual machine defined by name and placement
 
@@ -1541,8 +1640,25 @@ def delete_vm(name, datacenter, placement=None, power_off=False):
     placement
         Placement information of the virtual machine
 
-    service_instance
-        vCenter service instance for connection and configuration
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
 
     .. code-block:: bash
 
@@ -1550,9 +1666,16 @@ def delete_vm(name, datacenter, placement=None, power_off=False):
 
     """
     if salt.utils.platform.is_proxy():
-        service_instance = _get_service_instance_via_proxy()
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
     else:
-        service_instance = _get_service_instance()
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     results = {}
     schema = ESXVirtualMachineDeleteSchema.serialize()
@@ -1575,8 +1698,6 @@ def delete_vm(name, datacenter, placement=None, power_off=False):
 
 
 @depends(HAS_PYVMOMI)
-@_supports_proxies("esxvm", "esxcluster", "esxdatacenter")
-@_gets_service_instance_via_proxy
 def create_vm(
     vm_name,
     cpu,
@@ -1594,7 +1715,13 @@ def create_vm(
     sata_controllers=None,
     cd_drives=None,
     advanced_configs=None,
-    service_instance=None,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Creates a virtual machine container.
@@ -1630,6 +1757,26 @@ def create_vm(
     placement
         Resource pool or cluster or host or folder where the virtual machine
         will be deployed
+
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
 
     devices
         interfaces
@@ -1706,6 +1853,18 @@ def create_vm(
     advanced_config
         Advanced config parameters to be set for the virtual machine
     """
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
     # If datacenter is specified, set the container reference to start search
     # from it instead
     container_object = saltext.vmware.utils.vmware.get_datacenter(service_instance, datacenter)
@@ -1797,8 +1956,6 @@ def create_vm(
 
 
 @depends(HAS_PYVMOMI)
-@_supports_proxies("esxvm", "esxcluster", "esxdatacenter")
-@_gets_service_instance_via_proxy
 def update_vm(
     vm_name,
     cpu=None,
@@ -1814,7 +1971,13 @@ def update_vm(
     cd_dvd_drives=None,
     sata_controllers=None,
     advanced_configs=None,
-    service_instance=None,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Updates the configuration of the virtual machine if the config differs
@@ -1859,9 +2022,39 @@ def update_vm(
     advanced_config
         Advanced config parameters to be set for the virtual machine
 
-    service_instance
-        vCenter service instance for connection and configuration
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
     """
+
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
     current_config = get_vm_config(
         vm_name, datacenter=datacenter, objects=True, service_instance=service_instance
     )
@@ -2009,9 +2202,19 @@ def update_vm(
 
 
 @depends(HAS_PYVMOMI)
-@_supports_proxies("esxvm", "esxcluster", "esxdatacenter")
-@_gets_service_instance_via_proxy
-def register_vm(name, datacenter, placement, vmx_path, service_instance=None):
+def register_vm(
+        name,
+        datacenter,
+        placement,
+        vmx_path,
+        host=None,
+        vcenter=None,
+        username=None,
+        password=None,
+        protocol=None,
+        port=None,
+        verify_ssl=True,
+):
     """
     Registers a virtual machine to the inventory with the given vmx file.
     Returns comments and change list
@@ -2028,10 +2231,38 @@ def register_vm(name, datacenter, placement, vmx_path, service_instance=None):
     vmx_path:
         Full path to the vmx file, datastore name should be included
 
-    service_instance
-        Service instance (vim.ServiceInstance) of the vCenter.
-        Default is None.
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
     """
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
     log.trace(
         "Registering virtual machine with properties "
         "datacenter={}, placement={}, "
@@ -2133,9 +2364,19 @@ def _remove_vm(name, datacenter, service_instance, placement=None, power_off=Non
 
 
 @depends(HAS_PYVMOMI)
-@_supports_proxies("esxvm", "esxcluster", "esxdatacenter")
-@_gets_service_instance_via_proxy
-def delete_vm(name, datacenter, placement=None, power_off=False, service_instance=None):
+def delete_vm(
+    name,
+    datacenter,
+    placement=None,
+    power_off=False,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
+):
     """
     Deletes a virtual machine defined by name and placement
 
@@ -2148,14 +2389,43 @@ def delete_vm(name, datacenter, placement=None, power_off=False, service_instanc
     placement
         Placement information of the virtual machine
 
-    service_instance
-        vCenter service instance for connection and configuration
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
 
     .. code-block:: bash
 
         salt '*' vsphere.delete_vm name=my_vm datacenter=my_datacenter
 
     """
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
     results = {}
     schema = ESXVirtualMachineDeleteSchema.serialize()
     try:
@@ -2177,10 +2447,18 @@ def delete_vm(name, datacenter, placement=None, power_off=False, service_instanc
 
 
 @depends(HAS_PYVMOMI)
-@_supports_proxies("esxvm", "esxcluster", "esxdatacenter")
-@_gets_service_instance_via_proxy
 def unregister_vm(
-    name, datacenter, placement=None, power_off=False, service_instance=None
+    name,
+    datacenter,
+    placement=None,
+    power_off=False,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Unregisters a virtual machine defined by name and placement
@@ -2194,14 +2472,43 @@ def unregister_vm(
     placement
         Placement information of the virtual machine
 
-    service_instance
-        vCenter service instance for connection and configuration
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
 
     .. code-block:: bash
 
         salt '*' vsphere.unregister_vm name=my_vm datacenter=my_datacenter
 
     """
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
     results = {}
     schema = ESXVirtualMachineUnregisterSchema.serialize()
     try:
@@ -2223,14 +2530,19 @@ def unregister_vm(
 
 
 @depends(HAS_PYVMOMI)
-@_gets_service_instance_via_proxy
 def get_vm(
     name,
     datacenter=None,
     vm_properties=None,
     traversal_spec=None,
     parent_ref=None,
-    service_instance=None,
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
 ):
     """
     Returns vm object properties.
@@ -2250,10 +2562,38 @@ def get_vm(
     parent_ref
         Container Reference object for searching under a given object.
 
-    service_instance
-        Service instance (vim.ServiceInstance) of the vCenter.
-        Default is None.
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
     """
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
     virtual_machine = saltext.vmware.utils.vmware.get_vm_by_property(
         service_instance,
         name,
@@ -2266,8 +2606,19 @@ def get_vm(
 
 
 @depends(HAS_PYVMOMI)
-@_gets_service_instance_via_proxy
-def get_vm_config_file(name, datacenter, placement, datastore, service_instance=None):
+def get_vm_config_file(
+        name,
+        datacenter,
+        placement,
+        datastore,
+        host=None,
+        vcenter=None,
+        username=None,
+        password=None,
+        protocol=None,
+        port=None,
+        verify_ssl=True,
+):
     """
     Queries the virtual machine config file and returns
     vim.host.DatastoreBrowser.SearchResults object on success None on failure
@@ -2281,10 +2632,38 @@ def get_vm_config_file(name, datacenter, placement, datastore, service_instance=
     datastore
         Datastore where the virtual machine files are stored
 
-    service_instance
-        Service instance (vim.ServiceInstance) of the vCenter.
-        Default is None.
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
     """
+
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
 
     browser_spec = vim.host.DatastoreBrowser.SearchSpec()
     directory = name
@@ -2318,8 +2697,18 @@ def get_vm_config_file(name, datacenter, placement, datastore, service_instance=
         return None
 
 
-@_gets_service_instance_via_proxy
-def get_vm_config(name, datacenter=None, objects=True, service_instance=None):
+def get_vm_config(
+        name,
+        datacenter=None,
+        objects=True,
+        host=None,
+        vcenter=None,
+        username=None,
+        password=None,
+        protocol=None,
+        port=None,
+        verify_ssl=True,
+):
     """
     Queries and converts the virtual machine properties to the available format
     from the schema. If the objects attribute is True the config objects will
@@ -2337,9 +2726,38 @@ def get_vm_config(name, datacenter=None, objects=True, service_instance=None):
         Indicates whether to return the vmware object properties
         (eg. object, key) or just the properties which can be set
 
-    service_instance
-        vCenter service instance for connection and configuration
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
     """
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
     properties = [
         "config.hardware.device",
         "config.hardware.numCPU",
