@@ -206,3 +206,64 @@ def get_connection_details(host=None,
         proxy_details["host"] = host 
 
     return proxy_details
+
+
+@depends(HAS_PYVMOMI)
+@ignores_kwargs("credstore")
+def system_info(
+    host=None,
+    vcenter=None,
+    username=None,
+    password=None,
+    protocol=None,
+    port=None,
+    verify_ssl=True,
+):
+    """
+    Return system information about a VMware environment.
+
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    verify_ssl
+        Verify the SSL certificate. Default: True
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt '*' vsphere.system_info 1.2.3.4 root bad-password
+    """
+    if salt.utils.platform.is_proxy():
+        details = __salt__["vmware_info.get_proxy_connection_details"]()
+    else:
+        details = __salt__["vmware_info.get_connection_details"](host=host,
+                                                                 vcenter=vcenter,
+                                                                 username=username,
+                                                                 password=password,
+                                                                 protocol=protocol,
+                                                                 port=port,
+                                                                 verify_ssl=verify_ssl)
+    service_instance = saltext.vmware.utils.vmware.get_service_instance(**details)
+
+    ret = salt.utils.vmware.get_inventory(service_instance).about.__dict__
+    if "apiType" in ret:
+        if ret["apiType"] == "HostAgent":
+            ret = dictupdate.update(
+                ret, salt.utils.vmware.get_hardware_grains(service_instance)
+            )
+    return ret
