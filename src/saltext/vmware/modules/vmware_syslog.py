@@ -41,6 +41,128 @@ def __virtual__():
     return __virtualname__
 
 
+def _reset_syslog_config_params(
+    host,
+    username,
+    password,
+    cmd,
+    resets,
+    valid_resets,
+    protocol=None,
+    port=None,
+    esxi_host=None,
+    credstore=None,
+):
+    """
+    Helper function for reset_syslog_config that resets the config and populates the return dictionary.
+    """
+    ret_dict = {}
+    all_success = True
+
+    if not isinstance(resets, list):
+        resets = [resets]
+
+    for reset_param in resets:
+        if reset_param in valid_resets:
+            ret = salt.utils.vmware.esxcli(
+                host,
+                username,
+                password,
+                cmd + reset_param,
+                protocol=protocol,
+                port=port,
+                esxi_host=esxi_host,
+                credstore=credstore,
+            )
+            ret_dict[reset_param] = {}
+            ret_dict[reset_param]["success"] = ret["retcode"] == 0
+            if ret["retcode"] != 0:
+                all_success = False
+                ret_dict[reset_param]["message"] = ret["stdout"]
+        else:
+            all_success = False
+            ret_dict[reset_param] = {}
+            ret_dict[reset_param]["success"] = False
+            ret_dict[reset_param]["message"] = "Invalid syslog " "configuration parameter"
+
+    ret_dict["success"] = all_success
+
+    return ret_dict
+
+
+def _set_syslog_config_helper(
+    host,
+    username,
+    password,
+    syslog_config,
+    config_value,
+    protocol=None,
+    port=None,
+    reset_service=None,
+    esxi_host=None,
+    credstore=None,
+):
+    """
+    Helper function for set_syslog_config that sets the config and populates the return dictionary.
+    """
+    cmd = "system syslog config set --{} {}".format(syslog_config, config_value)
+    ret_dict = {}
+
+    valid_resets = [
+        "logdir",
+        "loghost",
+        "default-rotate",
+        "default-size",
+        "default-timeout",
+        "logdir-unique",
+    ]
+    if syslog_config not in valid_resets:
+        ret_dict.update(
+            {
+                "success": False,
+                "message": "'{}' is not a valid config variable.".format(syslog_config),
+            }
+        )
+        return ret_dict
+
+    response = salt.utils.vmware.esxcli(
+        host,
+        username,
+        password,
+        cmd,
+        protocol=protocol,
+        port=port,
+        esxi_host=esxi_host,
+        credstore=credstore,
+    )
+
+    # Update the return dictionary for success or error messages.
+    if response["retcode"] != 0:
+        ret_dict.update({syslog_config: {"success": False, "message": response["stdout"]}})
+    else:
+        ret_dict.update({syslog_config: {"success": True}})
+
+    # Restart syslog for each host, if desired.
+    if reset_service:
+        if esxi_host:
+            host_name = esxi_host
+            esxi_host = [esxi_host]
+        else:
+            host_name = host
+        response = syslog_service_reload(
+            host,
+            username,
+            password,
+            protocol=protocol,
+            port=port,
+            esxi_hosts=esxi_host,
+            credstore=credstore,
+        ).get(host_name)
+        ret_dict.update({"syslog_restart": {"success": response["retcode"] == 0}})
+
+    return ret_dict
+
+
 def _format_syslog_config(cmd_ret):
     """
     Helper function to format the stdout from the get_syslog_config function.

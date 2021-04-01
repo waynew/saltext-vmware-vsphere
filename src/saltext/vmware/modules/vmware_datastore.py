@@ -436,3 +436,162 @@ def remove_datastore(datastore, service_instance=None):
         )
     salt.utils.vmware.remove_datastore(service_instance, datastores[0])
     return True
+
+
+@depends(HAS_PYVMOMI)
+@_supports_proxies("esxdatacenter", "vcenter")
+@_gets_service_instance_via_proxy
+def list_storage_policies(policy_names=None, service_instance=None):
+    """
+    Returns a list of storage policies.
+
+    policy_names
+        Names of policies to list. If None, all policies are listed.
+        Default is None.
+
+    service_instance
+        Service instance (vim.ServiceInstance) of the vCenter.
+        Default is None.
+
+    .. code-block:: bash
+
+        salt '*' vsphere.list_storage_policies
+
+        salt '*' vsphere.list_storage_policy policy_names=[policy_name]
+    """
+    profile_manager = salt.utils.pbm.get_profile_manager(service_instance)
+    if not policy_names:
+        policies = salt.utils.pbm.get_storage_policies(profile_manager, get_all_policies=True)
+    else:
+        policies = salt.utils.pbm.get_storage_policies(profile_manager, policy_names)
+    return [_get_policy_dict(p) for p in policies]
+
+
+def _apply_policy_config(policy_spec, policy_dict):
+    """Applies a policy dictionary to a policy spec"""
+    log.trace("policy_dict = {}".format(policy_dict))
+    if policy_dict.get("name"):
+        policy_spec.name = policy_dict["name"]
+    if policy_dict.get("description"):
+        policy_spec.description = policy_dict["description"]
+    if policy_dict.get("subprofiles"):
+        # Incremental changes to subprofiles and capabilities are not
+        # supported because they would complicate updates too much
+        # The whole configuration of all sub-profiles is expected and applied
+        policy_spec.constraints = pbm.profile.SubProfileCapabilityConstraints()
+        subprofiles = []
+        for subprofile_dict in policy_dict["subprofiles"]:
+            subprofile_spec = pbm.profile.SubProfileCapabilityConstraints.SubProfile(
+                name=subprofile_dict["name"]
+            )
+            cap_specs = []
+            if subprofile_dict.get("force_provision"):
+                subprofile_spec.forceProvision = subprofile_dict["force_provision"]
+            for cap_dict in subprofile_dict["capabilities"]:
+                prop_inst_spec = pbm.capability.PropertyInstance(id=cap_dict["id"])
+                setting_type = cap_dict["setting"]["type"]
+                if setting_type == "set":
+                    prop_inst_spec.value = pbm.capability.types.DiscreteSet()
+                    prop_inst_spec.value.values = cap_dict["setting"]["values"]
+                elif setting_type == "range":
+                    prop_inst_spec.value = pbm.capability.types.Range()
+                    prop_inst_spec.value.max = cap_dict["setting"]["max"]
+                    prop_inst_spec.value.min = cap_dict["setting"]["min"]
+                elif setting_type == "scalar":
+                    prop_inst_spec.value = cap_dict["setting"]["value"]
+                cap_spec = pbm.capability.CapabilityInstance(
+                    id=pbm.capability.CapabilityMetadata.UniqueId(
+                        id=cap_dict["id"], namespace=cap_dict["namespace"]
+                    ),
+                    constraint=[
+                        pbm.capability.ConstraintInstance(propertyInstance=[prop_inst_spec])
+                    ],
+                )
+                cap_specs.append(cap_spec)
+            subprofile_spec.capability = cap_specs
+            subprofiles.append(subprofile_spec)
+        policy_spec.constraints.subProfiles = subprofiles
+    log.trace("updated policy_spec = {}".format(policy_spec))
+    return policy_spec
+
+
+@depends(HAS_PYVMOMI)
+@_supports_proxies("esxdatacenter", "vcenter")
+@_gets_service_instance_via_proxy
+def create_storage_policy(policy_name, policy_dict, service_instance=None):
+    """
+    Creates a storage policy.
+
+    Supported capability types: scalar, set, range.
+
+    policy_name
+        Name of the policy to create.
+        The value of the argument will override any existing name in
+        ``policy_dict``.
+
+    policy_dict
+        Dictionary containing the changes to apply to the policy.
+        (example in salt.states.pbm)
+
+    service_instance
+        Service instance (vim.ServiceInstance) of the vCenter.
+        Default is None.
+
+    .. code-block:: bash
+
+        salt '*' vsphere.create_storage_policy policy_name='policy name'
+            policy_dict="$policy_dict"
+    """
+    log.trace("create storage policy '{}', dict = {}" "".format(policy_name, policy_dict))
+    profile_manager = salt.utils.pbm.get_profile_manager(service_instance)
+    policy_create_spec = pbm.profile.CapabilityBasedProfileCreateSpec()
+    # Hardcode the storage profile resource type
+    policy_create_spec.resourceType = pbm.profile.ResourceType(
+        resourceType=pbm.profile.ResourceTypeEnum.STORAGE
+    )
+    # Set name argument
+    policy_dict["name"] = policy_name
+    log.trace("Setting policy values in policy_update_spec")
+    _apply_policy_config(policy_create_spec, policy_dict)
+    salt.utils.pbm.create_storage_policy(profile_manager, policy_create_spec)
+    return {"create_storage_policy": True}
+
+
+@depends(HAS_PYVMOMI)
+@_supports_proxies("esxdatacenter", "vcenter")
+@_gets_service_instance_via_proxy
+def update_storage_policy(policy, policy_dict, service_instance=None):
+    """
+    Updates a storage policy.
+
+    Supported capability types: scalar, set, range.
+
+    policy
+        Name of the policy to update.
+
+    policy_dict
+        Dictionary containing the changes to apply to the policy.
+        (example in salt.states.pbm)
+
+    service_instance
+        Service instance (vim.ServiceInstance) of the vCenter.
+        Default is None.
+
+    .. code-block:: bash
+
+        salt '*' vsphere.update_storage_policy policy='policy name'
+            policy_dict="$policy_dict"
+    """
+    log.trace("updating storage policy, dict = {}".format(policy_dict))
+    profile_manager = salt.utils.pbm.get_profile_manager(service_instance)
+    policies = salt.utils.pbm.get_storage_policies(profile_manager, [policy])
+    if not policies:
+        raise VMwareObjectRetrievalError("Policy '{}' was not found" "".format(policy))
+    policy_ref = policies[0]
+    policy_update_spec = pbm.profile.CapabilityBasedProfileUpdateSpec()
+    log.trace("Setting policy values in policy_update_spec")
+    for prop in ["description", "constraints"]:
+        setattr(policy_update_spec, prop, getattr(policy_ref, prop))
+    _apply_policy_config(policy_update_spec, policy_dict)
+    salt.utils.pbm.update_storage_policy(profile_manager, policy_ref, policy_update_spec)
+    return {"update_storage_policy": True}
