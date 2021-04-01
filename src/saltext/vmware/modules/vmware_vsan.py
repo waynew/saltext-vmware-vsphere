@@ -41,6 +41,63 @@ def __virtual__():
     return __virtualname__
 
 
+def _get_vsan_eligible_disks(service_instance, host, host_names):
+    """
+    Helper function that returns a dictionary of host_name keys with either a list of eligible
+    disks that can be added to VSAN or either an 'Error' message or a message saying no
+    eligible disks were found. Possible keys/values look like:
+
+    return = {'host_1': {'Error': 'VSAN System Config Manager is unset ...'},
+              'host_2': {'Eligible': 'The host xxx does not have any VSAN eligible disks.'},
+              'host_3': {'Eligible': [disk1, disk2, disk3, disk4],
+              'host_4': {'Eligible': []}}
+    """
+    ret = {}
+    for host_name in host_names:
+
+        # Get VSAN System Config Manager, if available.
+        host_ref = _get_host_ref(service_instance, host, host_name=host_name)
+        vsan_system = host_ref.configManager.vsanSystem
+        if vsan_system is None:
+            msg = (
+                "VSAN System Config Manager is unset for host '{}'. "
+                "VSAN configuration cannot be changed without a configured "
+                "VSAN System.".format(host_name)
+            )
+            log.debug(msg)
+            ret.update({host_name: {"Error": msg}})
+            continue
+
+        # Get all VSAN suitable disks for this host.
+        suitable_disks = []
+        query = vsan_system.QueryDisksForVsan()
+        for item in query:
+            if item.state == "eligible":
+                suitable_disks.append(item)
+
+        # No suitable disks were found to add. Warn and move on.
+        # This isn't an error as the state may run repeatedly after all eligible disks are added.
+        if not suitable_disks:
+            msg = "The host '{}' does not have any VSAN eligible disks.".format(host_name)
+            log.warning(msg)
+            ret.update({host_name: {"Eligible": msg}})
+            continue
+
+        # Get disks for host and combine into one list of Disk Objects
+        disks = _get_host_ssds(host_ref) + _get_host_non_ssds(host_ref)
+
+        # Get disks that are in both the disks list and suitable_disks lists.
+        matching = []
+        for disk in disks:
+            for suitable_disk in suitable_disks:
+                if disk.canonicalName == suitable_disk.disk.canonicalName:
+                    matching.append(disk)
+
+        ret.update({host_name: {"Eligible": matching}})
+
+    return ret
+
+
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
 def vsan_add_disks(
@@ -536,3 +593,27 @@ def get_vsan_eligible_disks(
 
     return ret
 
+
+@depends(HAS_PYVMOMI)
+@_supports_proxies("esxdatacenter", "vcenter")
+@_gets_service_instance_via_proxy
+def list_default_vsan_policy(service_instance=None):
+    """
+    Returns the default vsan storage policy.
+
+    service_instance
+        Service instance (vim.ServiceInstance) of the vCenter.
+        Default is None.
+
+    .. code-block:: bash
+
+        salt '*' vsphere.list_storage_policies
+
+        salt '*' vsphere.list_storage_policy policy_names=[policy_name]
+    """
+    profile_manager = salt.utils.pbm.get_profile_manager(service_instance)
+    policies = salt.utils.pbm.get_storage_policies(profile_manager, get_all_policies=True)
+    def_policies = [p for p in policies if p.systemCreatedProfileType == "VsanDefaultProfile"]
+    if not def_policies:
+        raise VMwareObjectRetrievalError("Default VSAN policy was not " "retrieved")
+    return _get_policy_dict(def_policies[0])

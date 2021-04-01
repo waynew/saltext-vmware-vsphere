@@ -12,6 +12,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 import logging
 
 import salt.utils.proxy
+import saltext.vmware.modules.vmware_info
 from salt.exceptions import SaltSystemExit
 
 __proxyenabled__ = ["esxi"]
@@ -20,6 +21,10 @@ __virtualname__ = "esxi"
 log = logging.getLogger(__file__)
 
 GRAINS_CACHE = {}
+
+__salt__ = {
+    "vmware_info.system_info": saltext.vmware.modules.vmware_info.system_info
+}
 
 
 def __virtual__():
@@ -30,8 +35,6 @@ def __virtual__():
 
     try:
         if salt.utils.proxy.is_proxytype(__opts__, "esxi"):
-            import saltext.vmware.modules
-
             return __virtualname__
     except KeyError:
         pass
@@ -70,6 +73,7 @@ def _find_credentials(host):
     Cycle through all the possible credentials and return the first one that
     works.
     """
+    log.debug('=== in _find_credentials ===')
     user_names = [__pillar__["proxy"].get("username", "root")]
     passwords = __pillar__["proxy"]["passwords"]
     verify_ssl = __pillar__["proxy"].get("verify_ssl")
@@ -77,7 +81,7 @@ def _find_credentials(host):
         for password in passwords:
             try:
                 # Try to authenticate with the given user/password combination
-                ret = saltext.vmware.modules.vmware_info.system_info(
+                ret = __salt__["vmware_info.system_info"](
                     host=host, username=user, password=password, verify_ssl=verify_ssl
                 )
             except SaltSystemExit:
@@ -103,7 +107,7 @@ def _grains():
             protocol = __pillar__["proxy"].get("protocol")
             port = __pillar__["proxy"].get("port")
             verify_ssl = __pillar__["proxy"].get("verify_ssl")
-            ret = saltext.vmware.modules.vmware_info.system_info(
+            ret = __salt__["vmware_info.system_info"](
                 host=host,
                 username=username,
                 password=password,

@@ -269,7 +269,7 @@ def _create_adapter_type(network_adapter, adapter_type, network_adapter_label=""
     """
     log.trace("Configuring virtual machine network " "adapter adapter_type=%s", adapter_type)
     if adapter_type in ["vmxnet", "vmxnet2", "vmxnet3", "e1000", "e1000e"]:
-        edited_network_adapter = salt.utils.vmware.get_network_adapter_type(adapter_type)
+        edited_network_adapter = saltext.vmware.utils.vmware.get_network_adapter_type(adapter_type)
         if isinstance(network_adapter, type(edited_network_adapter)):
             edited_network_adapter = network_adapter
         else:
@@ -320,12 +320,12 @@ def _create_network_backing(network_name, switch_type, parent_ref):
         "Configuring virtual machine network backing network_name=%s " "switch_type=%s parent=%s",
         network_name,
         switch_type,
-        salt.utils.vmware.get_managed_object_name(parent_ref),
+        saltext.vmware.utils.vmware.get_managed_object_name(parent_ref),
     )
     backing = {}
     if network_name:
         if switch_type == "standard":
-            networks = salt.utils.vmware.get_networks(parent_ref, network_names=[network_name])
+            networks = saltext.vmware.utils.vmware.get_networks(parent_ref, network_names=[network_name])
             if not networks:
                 raise salt.exceptions.VMwareObjectRetrievalError(
                     "The network '{}' could not be " "retrieved.".format(network_name)
@@ -335,7 +335,7 @@ def _create_network_backing(network_name, switch_type, parent_ref):
             backing.deviceName = network_name
             backing.network = network_ref
         elif switch_type == "distributed":
-            networks = salt.utils.vmware.get_dvportgroups(
+            networks = saltext.vmware.utils.vmware.get_dvportgroups(
                 parent_ref, portgroup_names=[network_name]
             )
             if not networks:
@@ -873,8 +873,8 @@ def _apply_cd_drive(
         drive_spec.device.backing = vim.vm.device.VirtualCdrom.IsoBackingInfo()
         drive_spec.device.backing.fileName = datastore_iso_file["path"]
         datastore = datastore_iso_file["path"].partition("[")[-1].rpartition("]")[0]
-        datastore_object = salt.utils.vmware.get_datastores(
-            salt.utils.vmware.get_service_instance_from_managed_object(parent_ref),
+        datastore_object = saltext.vmware.utils.vmware.get_datastores(
+            saltext.vmware.utils.vmware.get_service_instance_from_managed_object(parent_ref),
             parent_ref,
             datastore_names=[datastore],
         )[0]
@@ -966,7 +966,7 @@ def _apply_hard_disk(
     disk_spec.device.unitNumber = unit_number
     disk_spec.device.deviceInfo = vim.Description()
     if size:
-        convert_size = salt.utils.vmware.convert_to_kb(unit, size)
+        convert_size = saltext.vmware.utils.vmware.convert_to_kb(unit, size)
         disk_spec.device.capacityInKB = convert_size["size"]
     if disk_label:
         disk_spec.device.deviceInfo.label = disk_label
@@ -982,7 +982,7 @@ def _apply_hard_disk(
     if operation == "add":
         disk_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
         disk_spec.device.backing.fileName = "[{}] {}".format(
-            salt.utils.vmware.get_managed_object_name(datastore), filename
+            saltext.vmware.utils.vmware.get_managed_object_name(datastore), filename
         )
         disk_spec.fileOperation = vim.vm.device.VirtualDeviceSpec.FileOperation.create
     elif operation == "edit":
@@ -1051,7 +1051,7 @@ def _create_disks(service_instance, disks, scsi_controllers=None, parent=None):
                     "The given controller does not exist: " "{}".format(disk["controller"])
                 )
         if "datastore" in disk:
-            datastore_ref = salt.utils.vmware.get_datastores(
+            datastore_ref = saltext.vmware.utils.vmware.get_datastores(
                 service_instance, parent, datastore_names=[disk["datastore"]]
             )[0]
             datastore = disk["datastore"]
@@ -3052,7 +3052,7 @@ def _convert_units(devices):
     if devices:
         for device in devices:
             if "unit" in device and "size" in device:
-                device.update(salt.utils.vmware.convert_to_kb(device["unit"], device["size"]))
+                device.update(saltext.vmware.utils.vmware.convert_to_kb(device["unit"], device["size"]))
     else:
         return False
     return True
@@ -3149,3 +3149,127 @@ def compare_vm_configs(new_config, current_config):
             diffs[key] = device_diffs
 
     return diffs
+
+
+@depends(HAS_PYVMOMI)
+def get_advanced_configs(vm_name, datacenter, service_instance=None):
+    """
+    Returns extra config parameters from a virtual machine advanced config list
+
+    vm_name
+        Virtual machine name
+
+    datacenter
+        Datacenter name where the virtual machine is available
+
+    service_instance
+        vCenter service instance for connection and configuration
+    """
+    current_config = get_vm_config(
+        vm_name, datacenter=datacenter, objects=True, service_instance=service_instance
+    )
+    return current_config["advanced_configs"]
+
+
+@depends(HAS_PYVMOMI)
+def set_advanced_configs(vm_name, datacenter, advanced_configs, service_instance=None):
+    """
+    Appends extra config parameters to a virtual machine advanced config list
+
+    vm_name
+        Virtual machine name
+
+    datacenter
+        Datacenter name where the virtual machine is available
+
+    advanced_configs
+        Dictionary with advanced parameter key value pairs
+
+    service_instance
+        vCenter service instance for connection and configuration
+    """
+    current_config = get_vm_config(
+        vm_name, datacenter=datacenter, objects=True, service_instance=service_instance
+    )
+    diffs = compare_vm_configs(
+        {"name": vm_name, "advanced_configs": advanced_configs}, current_config
+    )
+    datacenter_ref = salt.utils.vmware.get_datacenter(service_instance, datacenter)
+    vm_ref = salt.utils.vmware.get_mor_by_property(
+        service_instance,
+        vim.VirtualMachine,
+        vm_name,
+        property_name="name",
+        container_ref=datacenter_ref,
+    )
+    config_spec = vim.vm.ConfigSpec()
+    changes = diffs["advanced_configs"].diffs
+    _apply_advanced_config(
+        config_spec, diffs["advanced_configs"].new_values, vm_ref.config.extraConfig
+    )
+    if changes:
+        salt.utils.vmware.update_vm(vm_ref, config_spec)
+    return {"advanced_config_changes": changes}
+
+
+def _delete_advanced_config(config_spec, advanced_config, vm_extra_config):
+    """
+    Removes configuration parameters for the vm
+
+    config_spec
+        vm.ConfigSpec object
+
+    advanced_config
+        List of advanced config keys to be deleted
+
+    vm_extra_config
+        Virtual machine vm_ref.config.extraConfig object
+    """
+    log.trace("Removing advanced configuration " "parameters {}".format(advanced_config))
+    if isinstance(advanced_config, str):
+        raise salt.exceptions.ArgumentValueError(
+            "The specified 'advanced_configs' configuration "
+            "option cannot be parsed, please check the parameters"
+        )
+    removed_configs = []
+    for key in advanced_config:
+        for option in vm_extra_config:
+            if option.key == key:
+                option = vim.option.OptionValue(key=key, value="")
+                config_spec.extraConfig.append(option)
+                removed_configs.append(key)
+    return removed_configs
+
+
+@depends(HAS_PYVMOMI)
+def delete_advanced_configs(vm_name, datacenter, advanced_configs, service_instance=None):
+    """
+    Removes extra config parameters from a virtual machine
+
+    vm_name
+        Virtual machine name
+
+    datacenter
+        Datacenter name where the virtual machine is available
+
+    advanced_configs
+        List of advanced config values to be removed
+
+    service_instance
+        vCenter service instance for connection and configuration
+    """
+    datacenter_ref = salt.utils.vmware.get_datacenter(service_instance, datacenter)
+    vm_ref = salt.utils.vmware.get_mor_by_property(
+        service_instance,
+        vim.VirtualMachine,
+        vm_name,
+        property_name="name",
+        container_ref=datacenter_ref,
+    )
+    config_spec = vim.vm.ConfigSpec()
+    removed_configs = _delete_advanced_config(
+        config_spec, advanced_configs, vm_ref.config.extraConfig
+    )
+    if removed_configs:
+        salt.utils.vmware.update_vm(vm_ref, config_spec)
+    return {"removed_configs": removed_configs}

@@ -41,6 +41,61 @@ def __virtual__():
     return __virtualname__
 
 
+def _get_entity(service_instance, entity):
+    """
+    Returns the entity associated with the entity dict representation
+
+    Supported entities: cluster, vcenter
+
+    Expected entity format:
+
+    .. code-block:: python
+
+        cluster:
+            {'type': 'cluster',
+             'datacenter': <datacenter_name>,
+             'cluster': <cluster_name>}
+        vcenter:
+            {'type': 'vcenter'}
+
+    service_instance
+        Service instance (vim.ServiceInstance) of the vCenter.
+
+    entity
+        Entity dict in the format above
+    """
+
+    log.trace("Retrieving entity: {}".format(entity))
+    if entity["type"] == "cluster":
+        dc_ref = salt.utils.vmware.get_datacenter(service_instance, entity["datacenter"])
+        return salt.utils.vmware.get_cluster(dc_ref, entity["cluster"])
+    elif entity["type"] == "vcenter":
+        return None
+    raise ArgumentValueError("Unsupported entity type '{}'" "".format(entity["type"]))
+
+
+def _validate_entity(entity):
+    """
+    Validates the entity dict representation
+
+    entity
+        Dictionary representation of an entity.
+        See ``_get_entity`` docstrings for format.
+    """
+
+    # Validate entity:
+    if entity["type"] == "cluster":
+        schema = ESXClusterEntitySchema.serialize()
+    elif entity["type"] == "vcenter":
+        schema = VCenterEntitySchema.serialize()
+    else:
+        raise ArgumentValueError("Unsupported entity type '{}'" "".format(entity["type"]))
+    try:
+        jsonschema.validate(entity, schema)
+    except jsonschema.exceptions.ValidationError as exc:
+        raise InvalidEntityError(exc)
+
+
 @depends(HAS_PYVMOMI)
 @_supports_proxies("esxcluster", "esxdatacenter")
 @_gets_service_instance_via_proxy

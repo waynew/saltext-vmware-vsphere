@@ -41,6 +41,13 @@ def __virtual__():
     return __virtualname__
 
 
+def _get_service_manager(host_reference):
+    """
+    Helper function that returns a service manager object from a given host object.
+    """
+    return host_reference.configManager.serviceSystem
+
+
 @depends(HAS_PYVMOMI)
 @ignores_kwargs("credstore")
 def service_start(
