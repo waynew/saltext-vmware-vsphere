@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 import pytest
 
 
@@ -26,3 +29,10 @@ def salt_cli(master):
 @pytest.fixture
 def salt_call_cli(minion):
     return minion.get_salt_call_cli()
+
+
+@pytest.fixture(scope="session")
+def service_instance():
+    default_path = Path().parent.parent / "local" / "vcenter.conf"
+    config_path = os.environ.get("VCENTER_CONFIG", default_path)
+    return str(config_path)
