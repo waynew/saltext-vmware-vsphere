@@ -133,3 +133,6 @@ src/saltext/vcenter/version.py
 
 # Ignore CI generated artifacts
 artifacts/
+
+# Just a dir for local whatever
+local/
