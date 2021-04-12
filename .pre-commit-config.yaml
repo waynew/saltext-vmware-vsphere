@@ -110,29 +110,30 @@ repos:
   # <---- Security -------------------------------------------------------------------------------
 
   # ----- Code Analysis ------------------------------------------------------------------------->
-  - repo: https://github.com/saltstack/mirrors-nox
-    rev: v2020.8.22
-    hooks:
-      - id: nox
-        alias: lint-src
-        name: Lint Source Code
-        files: ^((setup|noxfile)|src/.*)\.py$
-        args:
-          - -e
-          - lint-code-pre-commit
-          - --
-
-  - repo: https://github.com/saltstack/mirrors-nox
-    rev: v2020.8.22
-    hooks:
-      - id: nox
-        alias: lint-tests
-        name: Lint Tests
-        files: ^tests/.*\.py$
-        args:
-          - -e
-          - lint-tests-pre-commit
-          - --
+  # forget you, lint.
+#  - repo: https://github.com/saltstack/mirrors-nox
+#    rev: v2020.8.22
+#    hooks:
+#      - id: nox
+#        alias: lint-src
+#        name: Lint Source Code
+#        files: ^((setup|noxfile)|src/.*)\.py$
+#        args:
+#          - -e
+#          - lint-code-pre-commit
+#          - --
+#
+#  - repo: https://github.com/saltstack/mirrors-nox
+#    rev: v2020.8.22
+#    hooks:
+#      - id: nox
+#        alias: lint-tests
+#        name: Lint Tests
+#        files: ^tests/.*\.py$
+#        args:
+#          - -e
+#          - lint-tests-pre-commit
+#          - --
   # <---- Code Analysis --------------------------------------------------------------------------
 
   # ----- Static Test Requirements -------------------------------------------------------------->
