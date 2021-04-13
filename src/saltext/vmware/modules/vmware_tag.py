@@ -7,6 +7,8 @@ from salt.utils.decorators import depends, ignores_kwargs
 
 log = logging.getLogger(__name__)
 
+HAS_VSPHERE_SDK = saltext.vmware.utils.vmware.HAS_VSPHERE_SDK
+
 try:
     # pylint: disable=no-name-in-module
     from pyVmomi import (
@@ -101,8 +103,8 @@ def _get_client(server, username, password, verify_ssl=None, ca_bundle=None):
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+##@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def list_tag_categories(
     server=None,
     username=None,
@@ -146,8 +148,8 @@ def list_tag_categories(
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+##@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def list_tags(
     server=None,
     username=None,
@@ -181,9 +183,12 @@ def list_tags(
         list of str
     """
     tags = None
-    client = _get_client(
-        server, username, password, verify_ssl=verify_ssl, ca_bundle=ca_bundle
-    )
+    if service_instance:
+        client = service_instance
+    else:
+        client = _get_client(
+            server, username, password, verify_ssl=verify_ssl, ca_bundle=ca_bundle
+        )
 
     if client:
         tags = client.tagging.Tag.list()
@@ -191,8 +196,8 @@ def list_tags(
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+#@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def attach_tag(
     object_id,
     tag_id,
@@ -276,8 +281,8 @@ def attach_tag(
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+#@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def list_attached_tags(
     object_id,
     managed_obj="ClusterComputeResource",
@@ -348,8 +353,8 @@ def list_attached_tags(
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+#@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def create_tag_category(
     name,
     description,
@@ -429,8 +434,8 @@ def create_tag_category(
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+#@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def delete_tag_category(
     category_id,
     server=None,
@@ -487,8 +492,8 @@ def delete_tag_category(
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+#@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def create_tag(
     name,
     description,
@@ -561,8 +566,8 @@ def create_tag(
 
 
 @depends(HAS_PYVMOMI, HAS_VSPHERE_SDK)
-@_supports_proxies("vcenter")
-@_gets_service_instance_via_proxy
+#@_supports_proxies("vcenter")
+#@_gets_service_instance_via_proxy
 def delete_tag(
     tag_id,
     server=None,

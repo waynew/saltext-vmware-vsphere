@@ -1,2 +1,4 @@
 salt>=3001
 pyvmomi==7.0.2
+setuptools>=56
+git+https://github.com/vmware/vsphere-automation-sdk-python.git#egg=vsphere-automation-sdk

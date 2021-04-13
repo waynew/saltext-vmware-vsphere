@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from pyVim import connect
+from vmware.vapi.vsphere.client import create_vsphere_client
 
 
 @pytest.fixture(scope="package")
@@ -56,3 +57,10 @@ def service_instance(integration_test_config):
         host=config["host"], user=config["user"], pwd=config["password"], sslContext=ctx
     )
     return si
+
+
+@pytest.fixture(scope="session")
+def vsphere_client(integration_test_config):
+    config = integration_test_config
+
+    return create_vsphere_client(server=config['host'], username=config['user'], password=config['password'])
